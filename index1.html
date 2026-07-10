@@ -1,0 +1,1001 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>إدارة عمالة الموقع</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{
+  --ink:#1c2733; --ink2:#4a5a6a; --bg:#f2f4f6; --card:#ffffff;
+  --copper:#c06514; --copper-soft:#fdf1e4; --line:#dde3e9;
+  --green:#2e8b57; --green-soft:#e7f4ec; --red:#bf3a2b; --red-soft:#fbeae7;
+  --amber:#b7791f; --amber-soft:#fcf3e0; --radius:14px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:"Segoe UI",Tahoma,"Noto Sans Arabic",Arial,sans-serif;background:var(--bg);color:var(--ink);min-height:100vh;font-size:15px}
+button{font-family:inherit;cursor:pointer;border:none;background:none;font-size:inherit}
+input,select,textarea{font-family:inherit;font-size:15px;padding:10px 12px;border:1.5px solid var(--line);border-radius:10px;width:100%;background:#fff;color:var(--ink)}
+input:focus,select:focus{outline:2px solid var(--copper);outline-offset:1px;border-color:var(--copper)}
+label{display:block;font-size:13px;color:var(--ink2);margin:10px 0 4px;font-weight:600}
+
+#gate{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;background:linear-gradient(160deg,#1c2733 0%,#2b3d4f 100%)}
+.gateBox{background:var(--card);border-radius:18px;padding:30px 24px;width:100%;max-width:400px;box-shadow:0 20px 60px rgba(0,0,0,.35)}
+.gateBox h1{font-size:21px;margin-bottom:4px}
+.gateBox .sub{color:var(--ink2);font-size:13px;margin-bottom:16px}
+.brandBar{height:5px;width:56px;background:var(--copper);border-radius:3px;margin-bottom:14px}
+.gateLogo{max-height:64px;max-width:180px;object-fit:contain;display:block;margin-bottom:12px}
+
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:11px 18px;border-radius:10px;font-weight:700;font-size:14px;transition:filter .15s}
+.btn:active{filter:brightness(.92)}
+.btn:disabled{opacity:.5}
+.btn-primary{background:var(--copper);color:#fff;width:100%}
+.btn-ghost{background:#eef1f4;color:var(--ink)}
+.btn-green{background:var(--green);color:#fff}
+.btn-red{background:var(--red);color:#fff}
+.btn-sm{padding:7px 12px;font-size:13px;border-radius:8px}
+.btn-line{border:1.5px solid var(--line);background:#fff;color:var(--ink)}
+
+#app{display:none;min-height:100vh;padding-bottom:84px}
+header{background:var(--ink);color:#fff;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:20;gap:10px}
+.hBrand{display:flex;align-items:center;gap:10px;min-width:0}
+.hLogo{height:38px;max-width:110px;object-fit:contain;background:#fff;border-radius:8px;padding:3px}
+header h1{font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+header .who{font-size:12px;opacity:.85}
+.iconBtn{color:#fff;background:rgba(255,255,255,.12);border-radius:8px;padding:7px 11px;font-size:13px;font-weight:600;white-space:nowrap}
+nav{position:fixed;bottom:0;right:0;left:0;background:#fff;border-top:1px solid var(--line);display:flex;z-index:20}
+nav button{flex:1;padding:9px 2px 11px;font-size:11px;color:var(--ink2);display:flex;flex-direction:column;align-items:center;gap:3px;font-weight:600;position:relative}
+nav button .ico{font-size:20px;line-height:1}
+nav button.active{color:var(--copper)}
+.dot{position:absolute;top:5px;right:calc(50% - 16px);background:var(--red);color:#fff;border-radius:10px;font-size:10px;padding:1px 5px;font-weight:800}
+main{padding:16px;max-width:920px;margin:0 auto}
+
+.card{background:var(--card);border-radius:var(--radius);padding:16px;margin-bottom:14px;box-shadow:0 1px 3px rgba(20,30,40,.06)}
+.card h2{font-size:16px;margin-bottom:12px;display:flex;align-items:center;gap:8px}
+.card h2::before{content:"";width:4px;height:18px;background:var(--copper);border-radius:2px;display:inline-block}
+.row{display:flex;gap:10px;flex-wrap:wrap}
+.row>*{flex:1;min-width:130px}
+.stat{background:var(--card);border-radius:var(--radius);padding:14px;text-align:center;flex:1;min-width:96px;box-shadow:0 1px 3px rgba(20,30,40,.06)}
+.stat .n{font-size:22px;font-weight:800;color:var(--copper)}
+.stat .l{font-size:12px;color:var(--ink2);margin-top:2px}
+.empty{text-align:center;color:var(--ink2);padding:26px 10px;font-size:14px}
+.loading{text-align:center;color:var(--ink2);padding:40px 10px}
+.badge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:700}
+.b-green{background:var(--green-soft);color:var(--green)}
+.b-red{background:var(--red-soft);color:var(--red)}
+.b-amber{background:var(--amber-soft);color:var(--amber)}
+.b-copper{background:var(--copper-soft);color:var(--copper)}
+.b-gray{background:#eef1f4;color:var(--ink2)}
+
+.wCard{display:flex;gap:12px;align-items:center;background:var(--card);border-radius:var(--radius);padding:12px;margin-bottom:10px;box-shadow:0 1px 3px rgba(20,30,40,.06)}
+.avatar{width:56px;height:56px;border-radius:50%;object-fit:cover;background:#dfe5ea;flex-shrink:0;border:2px solid var(--copper-soft);display:flex;align-items:center;justify-content:center;font-weight:800;color:var(--copper);font-size:20px}
+.wInfo{flex:1;min-width:0}
+.wInfo .nm{font-weight:800;font-size:15px}
+.wInfo .jt{font-size:12.5px;color:var(--ink2)}
+.wActs{display:flex;flex-direction:column;gap:6px}
+
+.attRow{display:flex;align-items:center;gap:8px;padding:10px 0;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.attRow:last-child{border-bottom:none}
+.attName{flex:1;font-weight:700;font-size:14px;display:flex;align-items:center;gap:8px;min-width:160px}
+.attName .avatar,.attName img.avatar{width:36px;height:36px;font-size:14px}
+.seg{display:flex;background:#eef1f4;border-radius:9px;padding:3px;gap:3px}
+.seg button{padding:7px 11px;border-radius:7px;font-size:12.5px;font-weight:700;color:var(--ink2)}
+.seg button.on-p{background:var(--green);color:#fff}
+.seg button.on-h{background:var(--amber);color:#fff}
+.seg button.on-a{background:var(--red);color:#fff}
+.otIn{width:58px !important;padding:6px !important;text-align:center}
+.srcTag{font-size:10.5px;color:var(--ink2)}
+
+.tbl{width:100%;border-collapse:collapse;font-size:13.5px}
+.tbl th{background:#eef1f4;padding:9px 8px;text-align:right;font-size:12.5px;color:var(--ink2)}
+.tbl td{padding:9px 8px;border-bottom:1px solid var(--line)}
+.tbl tr:last-child td{border-bottom:none}
+.tblWrap{overflow-x:auto}
+.money{font-weight:800;white-space:nowrap}
+.money.pos{color:var(--green)} .money.neg{color:var(--red)}
+
+.modalBk{position:fixed;inset:0;background:rgba(15,22,30,.55);display:none;align-items:flex-end;justify-content:center;z-index:50}
+.modalBk.open{display:flex}
+.modal{background:#fff;width:100%;max-width:560px;border-radius:18px 18px 0 0;max-height:92vh;overflow-y:auto;padding:20px;animation:up .18s ease}
+@media(min-width:600px){.modalBk{align-items:center}.modal{border-radius:18px}}
+@keyframes up{from{transform:translateY(30px);opacity:.6}to{transform:none;opacity:1}}
+.modal h3{font-size:17px;margin-bottom:6px}
+.mHead{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+.xBtn{font-size:22px;color:var(--ink2);padding:2px 8px}
+.photoPick{display:flex;align-items:center;gap:12px;margin-top:6px}
+.photoPick .avatar{width:64px;height:64px}
+.hint{font-size:12px;color:var(--ink2);margin-top:4px}
+.toast{position:fixed;bottom:96px;right:50%;transform:translateX(50%);background:var(--ink);color:#fff;padding:11px 20px;border-radius:12px;font-size:14px;z-index:99;display:none;box-shadow:0 8px 24px rgba(0,0,0,.3);max-width:90vw;text-align:center}
+.divider{height:1px;background:var(--line);margin:14px 0}
+.kv{display:flex;justify-content:space-between;padding:7px 0;font-size:14px;border-bottom:1px dashed var(--line);gap:10px;align-items:center}
+.kv:last-child{border-bottom:none}
+.kv b{font-weight:800}
+.periodBar{display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap}
+.periodBar select,.periodBar input{max-width:170px}
+.sigPad{border:2px dashed var(--line);border-radius:12px;background:#fff;touch-action:none;width:100%;height:190px;display:block}
+.sigImg{max-width:140px;max-height:56px;border:1px solid var(--line);border-radius:6px;background:#fff;vertical-align:middle}
+.checkBtn{width:100%;padding:22px;border-radius:18px;background:var(--green);color:#fff;font-size:19px;font-weight:800;box-shadow:0 6px 18px rgba(46,139,87,.35)}
+.checkBtn:disabled{background:#9fb8ab;box-shadow:none}
+.alertRow{display:flex;gap:10px;padding:11px 0;border-bottom:1px solid var(--line);align-items:flex-start}
+.alertRow:last-child{border-bottom:none}
+.alertRow .ic{font-size:20px}
+.alertRow.unseen{background:var(--copper-soft);margin:0 -16px;padding-right:16px;padding-left:16px}
+.logoPrev{max-height:60px;max-width:200px;object-fit:contain;border:1px solid var(--line);border-radius:8px;padding:4px;background:#fff}
+
+@media print{
+  body{background:#fff}
+  header,nav,.noPrint{display:none !important}
+  #app{padding-bottom:0}
+  .card{box-shadow:none;border:1px solid #ccc}
+}
+</style>
+</head>
+<body>
+
+<div id="gate"><div class="gateBox" id="gateBox"></div></div>
+
+<div id="app">
+<header>
+  <div class="hBrand">
+    <img id="hLogo" class="hLogo" style="display:none" alt="">
+    <div>
+      <h1 id="hTitle">إدارة عمالة الموقع</h1>
+      <div class="who" id="hWho"></div>
+    </div>
+  </div>
+  <div style="display:flex;gap:6px">
+    <button class="iconBtn noPrint" onclick="render()" title="تحديث">↻</button>
+    <button class="iconBtn noPrint" onclick="logout()">خروج</button>
+  </div>
+</header>
+<main id="main"></main>
+<nav id="navBar" class="noPrint"></nav>
+</div>
+
+<div class="modalBk" id="modalBk" onclick="if(event.target===this)closeModal()">
+  <div class="modal" id="modalBody"></div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+/* ============================================================
+   الإعداد والاتصال
+============================================================ */
+const EMAIL_DOMAIN = 'crew.site';
+const DEFAULT_SUPABASE_URL = 'https://ivdketdrspmmsnmlwhho.supabase.co';
+const DEFAULT_SUPABASE_KEY = 'sb_publishable_51-VmYNuyONH9J3Yv7X5HQ_fbVk3z3N';
+let SB=null, SB2=null;      // SB2 لإنشاء حسابات العمال دون قطع جلسة المدير
+let ME=null;                 // الملف الشخصي للمستخدم الحالي
+let SETTINGS=null;
+let PROFILES=[];             // كاش للعمال (مدير/مشرف)
+let TAB='workers';
+let attDate=today(), payMonth=thisMonth();
+let alertCount=0;
+
+function cfg(){ return {url:DEFAULT_SUPABASE_URL,key:DEFAULT_SUPABASE_KEY}; }
+function today(){ return new Date().toISOString().slice(0,10); }
+function thisMonth(){ return today().slice(0,7); }
+function fmt(n){ return (Math.round((+n||0)*100)/100).toLocaleString('en-US'); }
+function cur(){ return SETTINGS && SETTINGS.currency || 'دينار'; }
+function toast(msg){ const t=document.getElementById('toast'); t.textContent=msg; t.style.display='block'; clearTimeout(t._x); t._x=setTimeout(()=>t.style.display='none',3000); }
+function esc(s){ return (s==null?'':String(s)).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function pById(id){ return PROFILES.find(p=>p.id===id) || (ME&&ME.id===id?ME:null); }
+function avatarHTML(w,cls){
+  if(w&&w.photo) return `<img class="avatar ${cls||''}" src="${w.photo}" alt="">`;
+  return `<div class="avatar ${cls||''}">${esc(((w&&w.name)||'؟').trim().charAt(0))}</div>`;
+}
+function monthName(ym){
+  const M=['كانون الثاني','شباط','آذار','نيسان','أيار','حزيران','تموز','آب','أيلول','تشرين الأول','تشرين الثاني','كانون الأول'];
+  const [y,m]=ym.split('-'); return M[+m-1]+' '+y;
+}
+function err(e){ console.error(e); toast('خطأ: '+((e&&e.message)||e)); }
+function staff(){ return ME && (ME.role==='admin'||ME.role==='supervisor'); }
+
+/* ============================================================
+   بوابة الدخول (إعداد الربط ← تسجيل الدخول)
+============================================================ */
+function gate(html){ document.getElementById('gateBox').innerHTML=html; }
+function showConfig(){
+  const c=cfg()||{};
+  gate(`
+    <div class="brandBar"></div>
+    <h1>ربط النظام (مرة واحدة)</h1>
+    <div class="sub">أدخل بيانات مشروع Supabase — من صفحة Settings → API</div>
+    <label>Project URL</label>
+    <input id="cfgUrl" dir="ltr" placeholder="https://xxxx.supabase.co" value="${esc(c.url||'')}">
+    <label>anon public key</label>
+    <input id="cfgKey" dir="ltr" placeholder="eyJhbGci..." value="${esc(c.key||'')}">
+    <div style="height:14px"></div>
+    <button class="btn btn-primary" onclick="saveConfig()">حفظ والمتابعة</button>
+  `);
+}
+function saveConfig(){
+  const url=document.getElementById('cfgUrl').value.trim();
+  const key=document.getElementById('cfgKey').value.trim();
+  if(!url.startsWith('https://')||key.length<20){ toast('تأكد من الرابط والمفتاح'); return; }
+  localStorage.setItem('crewCfg',JSON.stringify({url,key}));
+  boot();
+}
+function showLogin(msg){
+  const logo = SETTINGS && SETTINGS.logo ? `<img class="gateLogo" src="${SETTINGS.logo}">` : '';
+  const comp = SETTINGS && SETTINGS.company ? SETTINGS.company : 'إدارة عمالة الموقع';
+  gate(`
+    ${logo}
+    <div class="brandBar"></div>
+    <h1>${esc(comp)}</h1>
+    <div class="sub">${msg||'سجّل الدخول للمتابعة'}</div>
+    <label>اسم المستخدم</label>
+    <input id="lu" dir="ltr" autocomplete="username">
+    <label>كلمة المرور</label>
+    <input id="lp" type="password" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
+    <div style="height:14px"></div>
+    <button class="btn btn-primary" id="loginBtn" onclick="doLogin()">دخول</button>
+    <div style="height:8px"></div>
+    <button class="btn btn-line" style="width:100%" onclick="showFirstAdmin()">إنشاء حساب المدير (أول مرة فقط)</button>
+  `);
+}
+function showFirstAdmin(){
+  gate(`
+    <div class="brandBar"></div>
+    <h1>إنشاء حساب المدير</h1>
+    <div class="sub">يُنشأ مرة واحدة فقط عند أول تشغيل للنظام</div>
+    <label>اسمك</label><input id="fa_name">
+    <label>اسم المستخدم (إنجليزي)</label><input id="fa_user" dir="ltr" placeholder="anas">
+    <label>كلمة المرور (6 أحرف على الأقل)</label><input id="fa_pass" type="password">
+    <div style="height:14px"></div>
+    <button class="btn btn-primary" onclick="createFirstAdmin()">إنشاء الحساب والدخول</button>
+    <div class="hint" style="margin-top:10px;text-align:center;cursor:pointer" onclick="showLogin()">رجوع للدخول</div>
+  `);
+}
+async function createFirstAdmin(){
+  const name=document.getElementById('fa_name').value.trim();
+  const user=document.getElementById('fa_user').value.trim().toLowerCase();
+  const pass=document.getElementById('fa_pass').value;
+  if(!name||!/^[a-z0-9_.-]{3,}$/.test(user)||pass.length<6){ toast('أكمل البيانات — المستخدم إنجليزي 3 أحرف فأكثر وكلمة المرور 6+'); return; }
+  const {data,error}=await SB.auth.signUp({email:user+'@'+EMAIL_DOMAIN, password:pass});
+  if(error){ err(error); return; }
+  const uid=data.user && data.user.id;
+  if(!uid){ toast('تعذر إنشاء الحساب — تأكد من تعطيل تأكيد البريد في Supabase'); return; }
+  const {error:e2}=await SB.from('profiles').insert({id:uid, role:'admin', username:user, name});
+  if(e2){ err(e2); return; }
+  toast('تم إنشاء حساب المدير ✓');
+  boot();
+}
+async function doLogin(){
+  const u=document.getElementById('lu').value.trim().toLowerCase();
+  const p=document.getElementById('lp').value;
+  if(!u||!p){ toast('أدخل اسم المستخدم وكلمة المرور'); return; }
+  document.getElementById('loginBtn').disabled=true;
+  const {error}=await SB.auth.signInWithPassword({email:u+'@'+EMAIL_DOMAIN, password:p});
+  document.getElementById('loginBtn').disabled=false;
+  if(error){ toast('بيانات الدخول غير صحيحة'); return; }
+  boot();
+}
+async function logout(){ await SB.auth.signOut(); location.reload(); }
+
+/* ============================================================
+   الإقلاع
+============================================================ */
+async function boot(){
+  const c=cfg();
+  if(!SB){
+    SB = supabase.createClient(c.url, c.key);
+    SB2 = supabase.createClient(c.url, c.key, {auth:{storageKey:'crew2', persistSession:false, autoRefreshToken:false}});
+  }
+  const {data:{session}} = await SB.auth.getSession();
+  if(!session){
+    // نحاول قراءة الإعدادات للشعار؟ تتطلب دخولاً — نعرض الدخول مباشرة
+    showLogin();
+    return;
+  }
+  // تحميل الملف الشخصي والإعدادات
+  const [{data:prof,error:e1},{data:st,error:e2}] = await Promise.all([
+    SB.from('profiles').select('*').eq('id',session.user.id).single(),
+    SB.from('settings').select('*').eq('id',1).single()
+  ]);
+  if(e1||!prof){ await SB.auth.signOut(); showLogin('لم يُعثر على ملفك — تواصل مع المدير'); return; }
+  if(prof.active===false){ await SB.auth.signOut(); showLogin('حسابك موقوف — تواصل مع المدير'); return; }
+  ME=prof; SETTINGS=st||{};
+  if(staff()){
+    const {data:ps}=await SB.from('profiles').select('*').neq('role','admin').order('name');
+    PROFILES=(ps||[]);
+  } else PROFILES=[ME];
+  document.getElementById('gate').style.display='none';
+  document.getElementById('app').style.display='block';
+  applyBrand();
+  buildNav();
+  TAB = ME.role==='worker' ? 'home' : 'workers';
+  if(ME.role==='admin') refreshAlertCount();
+  render();
+}
+function applyBrand(){
+  const lg=document.getElementById('hLogo');
+  if(SETTINGS.logo){ lg.src=SETTINGS.logo; lg.style.display='block'; } else lg.style.display='none';
+  document.getElementById('hTitle').textContent = SETTINGS.company || 'إدارة عمالة الموقع';
+  document.getElementById('hWho').textContent =
+    ME.role==='admin'?'حساب المدير — '+ME.name : ME.role==='supervisor'?'مشرف — '+ME.name : ME.name;
+}
+
+/* ============================================================
+   التبويبات
+============================================================ */
+function buildNav(){
+  let tabs=[];
+  if(ME.role==='admin') tabs=[
+    {k:'workers',l:'العمال',i:'👷'},{k:'attendance',l:'الحضور',i:'📅'},
+    {k:'payroll',l:'الرواتب',i:'💰'},{k:'custody',l:'العهدة',i:'🧰'},
+    {k:'alerts',l:'تنبيهات',i:'🔔'},{k:'settings',l:'إعدادات',i:'⚙️'}];
+  else if(ME.role==='supervisor') tabs=[
+    {k:'attendance',l:'الحضور',i:'📅'},{k:'workers',l:'العمال',i:'👷'},{k:'custody',l:'العهدة',i:'🧰'}];
+  else tabs=[{k:'home',l:'حضوري',i:'📍'},{k:'myfile',l:'ملفي',i:'👤'}];
+  document.getElementById('navBar').innerHTML = tabs.map(t=>
+    `<button data-k="${t.k}" onclick="go('${t.k}')"><span class="ico">${t.i}</span>${t.l}${t.k==='alerts'?'<span class="dot" id="alertDot" style="display:none"></span>':''}</button>`
+  ).join('');
+  markNav();
+}
+function markNav(){ document.querySelectorAll('#navBar button').forEach(b=>b.classList.toggle('active',b.dataset.k===TAB)); }
+function go(t){ TAB=t; markNav(); render(); window.scrollTo(0,0); }
+function setMain(h){ document.getElementById('main').innerHTML=h; }
+async function render(){
+  setMain('<div class="loading">جاري التحميل…</div>');
+  try{
+    if(TAB==='workers') setMain(await viewWorkers());
+    else if(TAB==='attendance') setMain(await viewAttendance());
+    else if(TAB==='payroll') setMain(await viewPayroll());
+    else if(TAB==='custody') setMain(await viewCustody());
+    else if(TAB==='alerts') setMain(await viewAlerts());
+    else if(TAB==='settings') setMain(viewSettings());
+    else if(TAB==='home') setMain(await viewHome());
+    else if(TAB==='myfile') setMain(await fileHTML(ME.id,false));
+  }catch(e){ err(e); setMain('<div class="empty">تعذر التحميل — اسحب للتحديث أو اضغط ↻</div>'); }
+}
+async function reloadProfiles(){
+  const {data}=await SB.from('profiles').select('*').neq('role','admin').order('name');
+  PROFILES=data||[];
+}
+
+/* ============================================================
+   1) العمال
+============================================================ */
+async function viewWorkers(){
+  await reloadProfiles();
+  const list=PROFILES.filter(w=>w.active!==false);
+  const old=PROFILES.filter(w=>w.active===false);
+  let h='';
+  if(ME.role==='admin'){
+    h+=`<button class="btn btn-primary noPrint" style="margin-bottom:14px" onclick="openWorkerForm()">＋ إضافة عامل / مشرف</button>
+    <div class="row" style="margin-bottom:14px">
+      <div class="stat"><div class="n">${list.filter(w=>w.role==='worker').length}</div><div class="l">عامل فعّال</div></div>
+      <div class="stat"><div class="n">${list.filter(w=>w.role==='supervisor').length}</div><div class="l">مشرف</div></div>
+    </div>`;
+  }
+  if(!list.length) h+=`<div class="card"><div class="empty">لا يوجد عمال بعد</div></div>`;
+  h+=list.map(w=>workerCard(w)).join('');
+  if(ME.role==='admin'&&old.length){
+    h+=`<div class="divider"></div><div class="hint" style="margin-bottom:8px">موقوفون:</div>`+old.map(w=>workerCard(w,true)).join('');
+  }
+  return h;
+}
+function workerCard(w,inactive){
+  const wage=w.role==='worker' ? (w.wage_type==='daily'?`${fmt(w.wage)} ${cur()}/يوم`:`${fmt(w.wage)} ${cur()}/شهر`) : '';
+  const badge=w.role==='supervisor'?`<span class="badge b-copper">مشرف</span>`:(w.wage_type==='daily'?`<span class="badge b-gray">يومي</span>`:`<span class="badge b-gray">شهري</span>`);
+  let acts='';
+  if(ME.role==='admin') acts=`<div class="wActs noPrint">
+    <button class="btn btn-line btn-sm" onclick="openFile('${w.id}')">الملف</button>
+    <button class="btn btn-ghost btn-sm" onclick="openWorkerForm('${w.id}')">تعديل</button></div>`;
+  return `<div class="wCard" style="${inactive?'opacity:.55':''}">
+    ${avatarHTML(w)}
+    <div class="wInfo">
+      <div class="nm">${esc(w.name)} ${badge} ${inactive?'<span class="badge b-red">موقوف</span>':''}</div>
+      <div class="jt">${esc(w.title||'—')}${wage?' · '+wage:''}</div>
+      <div class="jt" dir="ltr" style="text-align:right">${esc(w.username)}${w.phone?' · '+esc(w.phone):''}</div>
+    </div>${acts}</div>`;
+}
+function openWorkerForm(id){
+  const w=id?pById(id):{role:'worker',wage_type:'daily',active:true};
+  const isNew=!id;
+  openModal(`
+    <div class="mHead"><h3>${isNew?'إضافة عامل / مشرف':'تعديل البيانات'}</h3><button class="xBtn" onclick="closeModal()">×</button></div>
+    <div class="photoPick">
+      <span id="fPhotoPrev">${avatarHTML(w)}</span>
+      <div><button class="btn btn-line btn-sm" onclick="document.getElementById('fPhoto').click()">📷 الصورة</button>
+      <input type="file" id="fPhoto" accept="image/*" style="display:none" onchange="pickPhoto(this,'fPhotoData','fPhotoPrev')"></div>
+    </div>
+    <input type="hidden" id="fPhotoData" value="${w.photo||''}">
+    <label>الدور</label>
+    <select id="fRole" onchange="document.getElementById('wageRow').style.display=this.value==='worker'?'flex':'none'">
+      <option value="worker" ${w.role==='worker'?'selected':''}>عامل</option>
+      <option value="supervisor" ${w.role==='supervisor'?'selected':''}>مشرف</option>
+    </select>
+    <label>الاسم الكامل *</label><input id="fName" value="${esc(w.name||'')}">
+    <label>المسمى الوظيفي</label><input id="fTitle" value="${esc(w.title||'')}" placeholder="فني كهرباء، مساعد...">
+    <div class="row">
+      <div><label>الرقم الوطني / الإقامة</label><input id="fNat" value="${esc(w.nat_id||'')}"></div>
+      <div><label>الهاتف</label><input id="fPhone" value="${esc(w.phone||'')}" inputmode="tel"></div>
+    </div>
+    <div class="row" id="wageRow" style="display:${w.role==='worker'?'flex':'none'}">
+      <div><label>نوع الأجر</label><select id="fWageType">
+        <option value="daily" ${w.wage_type==='daily'?'selected':''}>يومي</option>
+        <option value="monthly" ${w.wage_type==='monthly'?'selected':''}>شهري</option></select></div>
+      <div><label>قيمة الأجر (${cur()})</label><input id="fWage" type="number" inputmode="decimal" value="${w.wage||''}"></div>
+    </div>
+    <label>تاريخ المباشرة</label><input id="fStart" type="date" value="${w.start_date||today()}">
+    ${isNew?`
+    <div class="divider"></div>
+    <h3 style="font-size:15px">حساب الدخول</h3>
+    <div class="row">
+      <div><label>اسم المستخدم (إنجليزي) *</label><input id="fUser" dir="ltr" autocomplete="off" placeholder="ahmad1"></div>
+      <div><label>كلمة المرور (6+) *</label><input id="fPass" dir="ltr" autocomplete="off"></div>
+    </div>
+    <div class="hint">أعطِ العامل اسم المستخدم وكلمة المرور ليدخل من موبايله على نفس الرابط</div>`:`
+    <div class="hint" style="margin-top:8px">اسم المستخدم: <b dir="ltr">${esc(w.username)}</b> — تغيير كلمة المرور غير متاح من هنا</div>`}
+    <div style="height:16px"></div>
+    <button class="btn btn-primary" id="wSaveBtn" onclick="saveWorker('${id||''}')">${isNew?'إنشاء الحساب وإضافته':'حفظ التعديلات'}</button>
+    ${!isNew?`<div style="height:8px"></div>
+    <button class="btn ${w.active!==false?'btn-red':'btn-green'}" style="width:100%" onclick="toggleWorker('${id}')">${w.active!==false?'إيقاف (ترك العمل)':'إعادة تفعيل'}</button>`:''}
+  `);
+}
+function pickPhoto(inp,hidId,prevId){
+  const f=inp.files[0]; if(!f) return;
+  const r=new FileReader();
+  r.onload=e=>{ const img=new Image();
+    img.onload=()=>{ const c=document.createElement('canvas'); const s=Math.min(1,240/Math.max(img.width,img.height));
+      c.width=img.width*s; c.height=img.height*s;
+      c.getContext('2d').drawImage(img,0,0,c.width,c.height);
+      const data=c.toDataURL('image/jpeg',.8);
+      document.getElementById(hidId).value=data;
+      document.getElementById(prevId).innerHTML=`<img class="avatar" src="${data}">`;
+    }; img.src=e.target.result; };
+  r.readAsDataURL(f);
+}
+async function saveWorker(id){
+  const role=document.getElementById('fRole').value;
+  const name=document.getElementById('fName').value.trim();
+  if(!name){ toast('أدخل الاسم'); return; }
+  const rec={
+    role, name,
+    title:document.getElementById('fTitle').value.trim(),
+    nat_id:document.getElementById('fNat').value.trim(),
+    phone:document.getElementById('fPhone').value.trim(),
+    wage_type:document.getElementById('fWageType')?document.getElementById('fWageType').value:'daily',
+    wage:parseFloat(document.getElementById('fWage')&&document.getElementById('fWage').value)||0,
+    start_date:document.getElementById('fStart').value,
+    photo:document.getElementById('fPhotoData').value
+  };
+  if(role==='worker' && !(rec.wage>0)){ toast('أدخل قيمة الأجر'); return; }
+  const btn=document.getElementById('wSaveBtn'); btn.disabled=true;
+  try{
+    if(id){
+      const {error}=await SB.from('profiles').update(rec).eq('id',id);
+      if(error) throw error;
+      toast('تم حفظ التعديلات');
+    }else{
+      const user=document.getElementById('fUser').value.trim().toLowerCase();
+      const pass=document.getElementById('fPass').value;
+      if(!/^[a-z0-9_.-]{3,}$/.test(user)||pass.length<6){ toast('المستخدم إنجليزي 3+ وكلمة المرور 6+'); btn.disabled=false; return; }
+      const {data,error}=await SB2.auth.signUp({email:user+'@'+EMAIL_DOMAIN,password:pass});
+      if(error) throw error;
+      const uid=data.user&&data.user.id;
+      if(!uid) throw new Error('تعذر إنشاء الحساب');
+      rec.id=uid; rec.username=user;
+      const {error:e2}=await SB.from('profiles').insert(rec);
+      if(e2) throw e2;
+      toast('تمت الإضافة ✓ — أعطه: '+user);
+    }
+    closeModal(); render();
+  }catch(e){ err(e); btn.disabled=false; }
+}
+async function toggleWorker(id){
+  const w=pById(id);
+  const {error}=await SB.from('profiles').update({active:!(w.active!==false)?true:false}).eq('id',id);
+  if(error){ err(error); return; }
+  closeModal(); render();
+}
+
+/* ============================================================
+   2) الحضور (مدير + مشرف)
+============================================================ */
+async function viewAttendance(){
+  await reloadProfiles();
+  const list=PROFILES.filter(w=>w.active!==false && w.role==='worker');
+  const ym=attDate.slice(0,7);
+  const [{data:dayRecs},{data:monthRecs}]=await Promise.all([
+    SB.from('attendance').select('*').eq('day',attDate),
+    SB.from('attendance').select('worker_id,status,ot').gte('day',ym+'-01').lte('day',ym+'-31')
+  ]);
+  const day={}; (dayRecs||[]).forEach(r=>day[r.worker_id]=r);
+  window._monthRecs=monthRecs||[];
+  const missing=list.filter(w=>!day[w.id]);
+  let h=`<div class="card"><h2>تسجيل الحضور</h2>
+    <div class="periodBar">
+      <input type="date" value="${attDate}" onchange="attDate=this.value;render()">
+      <button class="btn btn-green btn-sm" onclick="allPresent()">✓ الكل حاضر</button>
+    </div>`;
+  if(!list.length) return h+`<div class="empty">لا يوجد عمال</div></div>`;
+  if(attDate===today()&&missing.length) h+=`<div class="hint" style="margin-bottom:8px">⏳ لم يسجلوا بعد: ${missing.map(w=>esc(w.name)).join('، ')}</div>`;
+  h+=list.map(w=>{
+    const r=day[w.id]||{};
+    const src=r.source==='self'?`<span class="srcTag">📍 ذاتي${r.distance!=null?' ('+Math.round(r.distance)+'م)':''}</span>`:(r.source?`<span class="srcTag">✎ ${r.source==='supervisor'?'مشرف':'مدير'}</span>`:'');
+    return `<div class="attRow">
+      <div class="attName">${avatarHTML(w)}<div>${esc(w.name)}<div class="jt" style="font-weight:400">${esc(w.title||'')} ${src}</div></div></div>
+      <input class="otIn" type="number" inputmode="decimal" placeholder="إضافي" value="${r.ot||''}" onchange="setOT('${w.id}',this.value)">
+      <div class="seg">
+        <button class="${r.status==='p'?'on-p':''}" onclick="setAtt('${w.id}','p')">حاضر</button>
+        <button class="${r.status==='h'?'on-h':''}" onclick="setAtt('${w.id}','h')">نص</button>
+        <button class="${r.status==='a'?'on-a':''}" onclick="setAtt('${w.id}','a')">غائب</button>
+      </div></div>`;
+  }).join('');
+  h+=`</div><div class="card"><h2>ملخص ${monthName(ym)}</h2><div class="tblWrap"><table class="tbl">
+    <tr><th>العامل</th><th>حضور</th><th>نص</th><th>غياب</th><th>إضافي</th></tr>`;
+  list.forEach(w=>{ const s=sumMonth(w.id);
+    h+=`<tr><td>${esc(w.name)}</td><td>${s.p}</td><td>${s.h}</td><td>${s.a}</td><td>${fmt(s.ot)}</td></tr>`; });
+  h+=`</table></div></div>`;
+  return h;
+}
+function sumMonth(id,recs){
+  let p=0,h=0,a=0,ot=0;
+  (recs||window._monthRecs||[]).forEach(r=>{ if(r.worker_id!==id)return;
+    if(r.status==='p')p++;else if(r.status==='h')h++;else if(r.status==='a')a++; ot+=+r.ot||0; });
+  return {p,h,a,ot};
+}
+async function upsertAtt(worker_id, patch){
+  const src=ME.role==='supervisor'?'supervisor':'admin';
+  const {data:ex}=await SB.from('attendance').select('id,status,ot').eq('worker_id',worker_id).eq('day',attDate).maybeSingle();
+  if(ex){
+    const {error}=await SB.from('attendance').update(Object.assign({source:src},patch)).eq('id',ex.id);
+    if(error) err(error);
+  }else{
+    const {error}=await SB.from('attendance').insert(Object.assign({worker_id,day:attDate,source:src},patch));
+    if(error) err(error);
+  }
+}
+async function setAtt(id,s){
+  const {data:ex}=await SB.from('attendance').select('id,status').eq('worker_id',id).eq('day',attDate).maybeSingle();
+  if(ex&&ex.status===s){ await SB.from('attendance').delete().eq('id',ex.id); }
+  else await upsertAtt(id,{status:s});
+  render();
+}
+async function setOT(id,v){ await upsertAtt(id,{ot:parseFloat(v)||0}); }
+async function allPresent(){
+  const list=PROFILES.filter(w=>w.active!==false&&w.role==='worker');
+  for(const w of list) await upsertAtt(w.id,{status:'p'});
+  toast('تم تسجيل الجميع حاضرين'); render();
+}
+
+/* ============================================================
+   3) شاشة العامل — تسجيل الحضور الذاتي بالموقع
+============================================================ */
+async function viewHome(){
+  const {data:rec}=await SB.from('attendance').select('*').eq('worker_id',ME.id).eq('day',today()).maybeSingle();
+  const s=SETTINGS;
+  const noSite = !(s.site_lat&&s.site_lng);
+  let status='';
+  if(rec){
+    const t = rec.status==='p'?'✓ حضورك مسجل اليوم':rec.status==='h'?'مسجل نص يوم':'مسجل غائب اليوم';
+    status=`<div class="card" style="text-align:center">
+      <div style="font-size:44px">${rec.status==='p'?'✅':rec.status==='h'?'🌗':'🔴'}</div>
+      <div style="font-weight:800;font-size:17px;margin-top:6px">${t}</div>
+      <div class="hint">${rec.source==='self'?'سجلته بنفسك':'سجله '+(rec.source==='supervisor'?'المشرف':'المدير')}${rec.ot?' · إضافي: '+fmt(rec.ot)+' س':''}</div>
+    </div>`;
+  }else{
+    status=`<div class="card" style="text-align:center">
+      <div class="hint" style="margin-bottom:14px">اضغط الزر وأنت داخل الموقع — يُقبل الحضور ضمن ${s.radius||100} متر من المشروع</div>
+      <button class="checkBtn" id="ciBtn" onclick="checkIn()" ${noSite?'disabled':''}>📍 سجّل حضوري الآن</button>
+      ${noSite?'<div class="hint" style="margin-top:10px;color:var(--red)">لم يحدد المدير موقع المشروع بعد</div>':''}
+    </div>`;
+  }
+  const ym=thisMonth();
+  const {data:mr}=await SB.from('attendance').select('worker_id,status,ot').eq('worker_id',ME.id).gte('day',ym+'-01').lte('day',ym+'-31');
+  const sm=sumMonth(ME.id,mr||[]);
+  return `${status}
+    <div class="row">
+      <div class="stat"><div class="n">${sm.p}</div><div class="l">حضور ${monthName(ym).split(' ')[0]}</div></div>
+      <div class="stat"><div class="n">${sm.a}</div><div class="l">غياب</div></div>
+      <div class="stat"><div class="n">${fmt(sm.ot)}</div><div class="l">إضافي (س)</div></div>
+    </div>`;
+}
+function distMeters(lat1,lng1,lat2,lng2){
+  const R=6371000,rad=x=>x*Math.PI/180;
+  const dLat=rad(lat2-lat1), dLng=rad(lng2-lng1);
+  const a=Math.sin(dLat/2)**2+Math.cos(rad(lat1))*Math.cos(rad(lat2))*Math.sin(dLng/2)**2;
+  return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+}
+function checkIn(){
+  const btn=document.getElementById('ciBtn'); btn.disabled=true; btn.textContent='جاري تحديد موقعك…';
+  if(!navigator.geolocation){ toast('المتصفح لا يدعم تحديد الموقع'); btn.disabled=false; return; }
+  navigator.geolocation.getCurrentPosition(async pos=>{
+    const d=distMeters(pos.coords.latitude,pos.coords.longitude,SETTINGS.site_lat,SETTINGS.site_lng);
+    const radius=SETTINGS.radius||100;
+    if(d<=radius){
+      const {error}=await SB.from('attendance').insert({worker_id:ME.id,day:today(),status:'p',source:'self',distance:Math.round(d)});
+      if(error){ err(error); btn.disabled=false; btn.textContent='📍 سجّل حضوري الآن'; return; }
+      const hr=new Date().getHours();
+      if(hr<5||hr>=21) await SB.from('alerts').insert({worker_id:ME.id,kind:'odd_time',message:ME.name+' سجل حضوره الساعة '+new Date().toLocaleTimeString('ar')});
+      toast('✓ تم تسجيل حضورك — يوم موفق!'); render();
+    }else{
+      await SB.from('alerts').insert({worker_id:ME.id,kind:'out_of_range',message:ME.name+' حاول التسجيل من خارج الموقع (يبعد '+Math.round(d)+' م)'});
+      toast('أنت خارج نطاق الموقع (تبعد '+Math.round(d)+' م) — اقترب من المشروع وحاول مجدداً');
+      btn.disabled=false; btn.textContent='📍 سجّل حضوري الآن';
+    }
+  }, e=>{
+    toast('فعّل خدمة الموقع (GPS) واسمح للمتصفح بالوصول إليها');
+    btn.disabled=false; btn.textContent='📍 سجّل حضوري الآن';
+  }, {enableHighAccuracy:true, timeout:15000});
+}
+
+/* ============================================================
+   4) الرواتب (مدير)
+============================================================ */
+async function loadPayData(ym){
+  const [{data:att},{data:adv},{data:ps}]=await Promise.all([
+    SB.from('attendance').select('worker_id,status,ot').gte('day',ym+'-01').lte('day',ym+'-31'),
+    SB.from('advances').select('*').gte('day',ym+'-01').lte('day',ym+'-31'),
+    SB.from('pay_signs').select('*').eq('month',ym)
+  ]);
+  return {att:att||[],adv:adv||[],ps:ps||[]};
+}
+function calcPay(w,D){
+  const s=sumMonth(w.id,D.att);
+  const md=SETTINGS.month_days||26, dh=SETTINGS.day_hours||8;
+  let base=0,hourly=0;
+  if(w.wage_type==='daily'){ base=s.p*w.wage+s.h*w.wage*.5; hourly=w.wage/dh; }
+  else{ base=Math.max(0,w.wage-s.a*(w.wage/md)); hourly=(w.wage/md)/dh; }
+  const otPay=s.ot*hourly;
+  const advList=D.adv.filter(a=>a.worker_id===w.id&&!a.settled);
+  const adv=advList.reduce((t,a)=>t+ +a.amount,0);
+  const sign=D.ps.find(x=>x.worker_id===w.id);
+  return {s,base,otPay,adv,net:base+otPay-adv,sign};
+}
+async function viewPayroll(){
+  await reloadProfiles();
+  const D=await loadPayData(payMonth);
+  window._payD=D;
+  const list=PROFILES.filter(w=>w.active!==false&&w.role==='worker');
+  let h=`<div class="card noPrint"><h2>كشف الرواتب</h2>
+    <div class="periodBar">
+      <input type="month" value="${payMonth}" onchange="payMonth=this.value;render()">
+      <button class="btn btn-line btn-sm" onclick="window.print()">🖨️ طباعة</button>
+    </div></div>`;
+  if(!list.length) return h+`<div class="card"><div class="empty">لا يوجد عمال</div></div>`;
+  let tot=0;
+  h+=`<div class="card"><h2>رواتب ${monthName(payMonth)}</h2><div class="tblWrap"><table class="tbl">
+    <tr><th>العامل</th><th>حضور</th><th>الأساسي</th><th>إضافي</th><th>سلف</th><th>الصافي</th><th class="noPrint"></th></tr>`;
+  list.forEach(w=>{ const c=calcPay(w,D); tot+=c.net;
+    h+=`<tr><td><b>${esc(w.name)}</b> ${c.sign?'<span class="badge b-green">وُقّع</span>':''}</td>
+      <td>${c.s.p}${c.s.h?' +'+c.s.h+'نص':''}</td>
+      <td class="money">${fmt(c.base)}</td><td class="money">${c.otPay?fmt(c.otPay):'—'}</td>
+      <td class="money ${c.adv?'neg':''}">${c.adv?'-'+fmt(c.adv):'—'}</td>
+      <td class="money pos">${fmt(c.net)}</td>
+      <td class="noPrint"><button class="btn btn-ghost btn-sm" onclick="openSlip('${w.id}')">قسيمة</button></td></tr>`; });
+  h+=`<tr><td colspan="5"><b>الإجمالي</b></td><td class="money pos">${fmt(tot)} ${cur()}</td><td class="noPrint"></td></tr></table></div></div>`;
+  h+=advancesCard(D);
+  return h;
+}
+function openSlip(id){
+  const w=pById(id), D=window._payD, c=calcPay(w,D);
+  const logo=SETTINGS.logo?`<img src="${SETTINGS.logo}" style="max-height:44px;max-width:130px;object-fit:contain">`:'';
+  openModal(`
+    <div class="mHead"><div style="display:flex;gap:10px;align-items:center">${logo}<h3>قسيمة راتب — ${monthName(payMonth)}</h3></div><button class="xBtn noPrint" onclick="closeModal()">×</button></div>
+    ${SETTINGS.company?`<div class="hint" style="margin-bottom:8px">${esc(SETTINGS.company)}</div>`:''}
+    <div style="display:flex;gap:12px;align-items:center;margin-bottom:10px">${avatarHTML(w)}<div><b>${esc(w.name)}</b><div class="jt">${esc(w.title||'')}</div></div></div>
+    <div class="kv"><span>نوع الأجر</span><b>${w.wage_type==='daily'?fmt(w.wage)+' '+cur()+' / يوم':fmt(w.wage)+' '+cur()+' / شهر'}</b></div>
+    <div class="kv"><span>أيام الحضور</span><b>${c.s.p}${c.s.h?' + '+c.s.h+' نص':''}</b></div>
+    <div class="kv"><span>أيام الغياب</span><b>${c.s.a}</b></div>
+    <div class="kv"><span>ساعات إضافية</span><b>${fmt(c.s.ot)}</b></div>
+    <div class="divider"></div>
+    <div class="kv"><span>الأجر الأساسي</span><b>${fmt(c.base)} ${cur()}</b></div>
+    <div class="kv"><span>بدل الإضافي</span><b>${fmt(c.otPay)} ${cur()}</b></div>
+    <div class="kv"><span>خصم السلف</span><b style="color:var(--red)">- ${fmt(c.adv)} ${cur()}</b></div>
+    <div class="kv" style="font-size:16px"><span><b>الصافي المستحق</b></span><b style="color:var(--green)">${fmt(c.net)} ${cur()}</b></div>
+    <div class="divider"></div>
+    ${c.sign
+      ?`<div class="kv"><span>توقيع العامل باستلام الراتب (${c.sign.day})</span><img class="sigImg" src="${c.sign.sig}"></div>`
+      :`<button class="btn btn-line noPrint" style="width:100%" onclick="signPay('${id}')">✍️ توقيع العامل باستلام الراتب</button>`}
+    <div style="height:8px"></div>
+    <div class="row noPrint">
+      <button class="btn btn-line" onclick="window.print()">🖨️ طباعة</button>
+      <button class="btn btn-green" onclick="settleMonth('${id}')">تصفية سلف الشهر</button>
+    </div>`);
+}
+async function settleMonth(id){
+  const {error}=await SB.from('advances').update({settled:true}).eq('worker_id',id).gte('day',payMonth+'-01').lte('day',payMonth+'-31');
+  if(error){ err(error); return; }
+  closeModal(); render(); toast('تمت تصفية سلف الشهر');
+}
+function advancesCard(D){
+  const list=D.adv.slice().sort((a,b)=>b.day.localeCompare(a.day));
+  let h=`<div class="card"><h2>السلف — ${monthName(payMonth)}</h2>
+    <button class="btn btn-primary noPrint" style="margin-bottom:12px" onclick="openAdvForm()">＋ تسجيل سلفة</button>`;
+  if(!list.length) h+=`<div class="empty">لا سلف هذا الشهر</div>`;
+  else{
+    h+=`<div class="tblWrap"><table class="tbl"><tr><th>التاريخ</th><th>العامل</th><th>المبلغ</th><th>ملاحظة</th><th>الحالة</th><th class="noPrint"></th></tr>`;
+    list.forEach(a=>{ const w=pById(a.worker_id);
+      h+=`<tr><td>${a.day.slice(5)}</td><td>${esc(w?w.name:'؟')}</td><td class="money">${fmt(a.amount)}</td><td>${esc(a.note||'')}</td>
+      <td>${a.settled?'<span class="badge b-green">مخصومة</span>':'<span class="badge b-amber">قائمة</span>'}</td>
+      <td class="noPrint"><button class="btn btn-ghost btn-sm" onclick="delAdv(${a.id})">حذف</button></td></tr>`; });
+    h+=`</table></div>`;
+  }
+  return h+`</div>`;
+}
+function openAdvForm(){
+  const opts=PROFILES.filter(w=>w.active!==false&&w.role==='worker').map(w=>`<option value="${w.id}">${esc(w.name)}</option>`).join('');
+  openModal(`
+    <div class="mHead"><h3>تسجيل سلفة</h3><button class="xBtn" onclick="closeModal()">×</button></div>
+    <label>العامل</label><select id="aW">${opts}</select>
+    <div class="row">
+      <div><label>المبلغ (${cur()})</label><input id="aAmt" type="number" inputmode="decimal"></div>
+      <div><label>التاريخ</label><input id="aDay" type="date" value="${today()}"></div>
+    </div>
+    <label>ملاحظة</label><input id="aNote">
+    <div style="height:14px"></div>
+    <button class="btn btn-primary" onclick="saveAdv()">حفظ</button>`);
+}
+async function saveAdv(){
+  const amount=parseFloat(document.getElementById('aAmt').value);
+  if(!(amount>0)){ toast('أدخل المبلغ'); return; }
+  const {error}=await SB.from('advances').insert({worker_id:document.getElementById('aW').value,amount,day:document.getElementById('aDay').value,note:document.getElementById('aNote').value.trim()});
+  if(error){ err(error); return; }
+  closeModal(); render(); toast('سُجلت السلفة — ستخصم من راتب الشهر');
+}
+async function delAdv(id){
+  if(!confirm('حذف السلفة؟')) return;
+  await SB.from('advances').delete().eq('id',id); render();
+}
+
+/* ============================================================
+   5) العهدة
+============================================================ */
+async function viewCustody(){
+  await reloadProfiles();
+  const {data}=await SB.from('custody').select('*').order('id',{ascending:false});
+  const all=data||[]; const open=all.filter(c=>!c.returned), done=all.filter(c=>c.returned);
+  let h=`<div class="card"><h2>عهدة العمال</h2>
+    <button class="btn btn-primary noPrint" style="margin-bottom:12px" onclick="openCusForm()">＋ تسليم عهدة</button>`;
+  if(!open.length) h+=`<div class="empty">لا عهد قائمة</div>`;
+  else{
+    h+=`<div class="tblWrap"><table class="tbl"><tr><th>العامل</th><th>الصنف</th><th>عدد</th><th>التاريخ</th><th>التوقيع</th><th class="noPrint"></th></tr>`;
+    open.forEach(c=>{ const w=pById(c.worker_id);
+      h+=`<tr><td><b>${esc(w?w.name:'؟')}</b></td><td>${esc(c.item)}${c.note?`<div class="jt">${esc(c.note)}</div>`:''}</td><td>${c.qty}</td><td>${c.day}</td>
+      <td>${c.sig?`<img class="sigImg" src="${c.sig}">`:`<button class="btn btn-line btn-sm noPrint" onclick="signCustody(${c.id})">✍️ توقيع</button>`}</td>
+      <td class="noPrint"><button class="btn btn-green btn-sm" onclick="returnCus(${c.id})">إرجاع ✓</button></td></tr>`; });
+    h+=`</table></div>`;
+  }
+  h+=`</div>`;
+  if(done.length){
+    h+=`<div class="card"><h2>عهد مرجعة</h2><div class="tblWrap"><table class="tbl"><tr><th>العامل</th><th>الصنف</th><th>سُلّمت</th><th>أُرجعت</th></tr>`;
+    done.slice(0,15).forEach(c=>{ const w=pById(c.worker_id);
+      h+=`<tr><td>${esc(w?w.name:'؟')}</td><td>${esc(c.item)} ×${c.qty}</td><td>${c.day}</td><td>${c.return_date}</td></tr>`; });
+    h+=`</table></div></div>`;
+  }
+  return h;
+}
+function openCusForm(){
+  const opts=PROFILES.filter(w=>w.active!==false&&w.role==='worker').map(w=>`<option value="${w.id}">${esc(w.name)}</option>`).join('');
+  openModal(`
+    <div class="mHead"><h3>تسليم عهدة</h3><button class="xBtn" onclick="closeModal()">×</button></div>
+    <label>العامل</label><select id="cW">${opts}</select>
+    <label>الصنف</label><input id="cItem" placeholder="دريل، سلم، عدة يدوية...">
+    <div class="row">
+      <div><label>العدد</label><input id="cQty" type="number" value="1"></div>
+      <div><label>التاريخ</label><input id="cDay" type="date" value="${today()}"></div>
+    </div>
+    <label>ملاحظة</label><input id="cNote">
+    <div style="height:14px"></div>
+    <button class="btn btn-primary" onclick="saveCus()">تسجيل العهدة</button>
+    <div class="hint" style="margin-top:8px">بعد الحفظ وقّع العامل من الجدول لتوثيق الاستلام</div>`);
+}
+async function saveCus(){
+  const item=document.getElementById('cItem').value.trim();
+  if(!item){ toast('أدخل الصنف'); return; }
+  const {error}=await SB.from('custody').insert({worker_id:document.getElementById('cW').value,item,
+    qty:parseInt(document.getElementById('cQty').value)||1,day:document.getElementById('cDay').value,
+    note:document.getElementById('cNote').value.trim()});
+  if(error){ err(error); return; }
+  closeModal(); render(); toast('سُجلت العهدة');
+}
+async function returnCus(id){
+  await SB.from('custody').update({returned:true,return_date:today()}).eq('id',id);
+  render(); toast('تم الإرجاع');
+}
+
+/* ============================================================
+   6) التنبيهات (مدير)
+============================================================ */
+async function refreshAlertCount(){
+  const {count}=await SB.from('alerts').select('id',{count:'exact',head:true}).eq('seen',false);
+  alertCount=count||0;
+  const d=document.getElementById('alertDot');
+  if(d){ d.style.display=alertCount?'block':'none'; d.textContent=alertCount; }
+}
+async function viewAlerts(){
+  const {data}=await SB.from('alerts').select('*').order('id',{ascending:false}).limit(60);
+  const list=data||[];
+  let h=`<div class="card"><h2>التنبيهات</h2>
+    ${list.some(a=>!a.seen)?`<button class="btn btn-ghost btn-sm noPrint" style="margin-bottom:10px" onclick="markSeen()">تمييز الكل كمقروء</button>`:''}`;
+  if(!list.length) h+=`<div class="empty">لا تنبيهات — كل شيء تمام ✓</div>`;
+  else h+=list.map(a=>`<div class="alertRow ${a.seen?'':'unseen'}">
+    <div class="ic">${a.kind==='out_of_range'?'📍':'🕐'}</div>
+    <div><div style="font-weight:700;font-size:14px">${esc(a.message)}</div>
+    <div class="hint">${new Date(a.created_at).toLocaleString('ar')}</div></div></div>`).join('');
+  return h+`</div>`;
+}
+async function markSeen(){
+  await SB.from('alerts').update({seen:true}).eq('seen',false);
+  refreshAlertCount(); render();
+}
+
+/* ============================================================
+   7) ملف العامل + الإعدادات
+============================================================ */
+function openFile(id){ fileHTML(id,true).then(h=>openModal(h)); }
+async function fileHTML(id,inModal){
+  const w=pById(id) || ME;
+  const ym=thisMonth();
+  const [{data:att},{data:adv},{data:cus},{data:ps}]=await Promise.all([
+    SB.from('attendance').select('worker_id,status,ot').eq('worker_id',id).gte('day',ym+'-01').lte('day',ym+'-31'),
+    SB.from('advances').select('*').eq('worker_id',id).order('id',{ascending:false}).limit(8),
+    SB.from('custody').select('*').eq('worker_id',id).eq('returned',false),
+    SB.from('pay_signs').select('*').eq('worker_id',id).eq('month',ym).maybeSingle()
+  ]);
+  const D={att:att||[],adv:(adv||[]).filter(a=>a.day.startsWith(ym)),ps:ps?[ps]:[]};
+  const c=calcPay(w,{att:D.att,adv:D.adv,ps:D.ps});
+  return `
+    ${inModal?`<div class="mHead"><h3>ملف العامل</h3><button class="xBtn" onclick="closeModal()">×</button></div>`:''}
+    <div class="card" style="display:flex;gap:14px;align-items:center">
+      ${avatarHTML(w)}
+      <div><div style="font-weight:800;font-size:17px">${esc(w.name)}</div>
+      <div class="jt">${esc(w.title||'')} · ${w.wage_type==='daily'?fmt(w.wage)+' '+cur()+'/يوم':fmt(w.wage)+' '+cur()+'/شهر'}</div>
+      <div class="jt">مباشرة: ${w.start_date||'—'}${w.phone?' · '+esc(w.phone):''}</div></div>
+    </div>
+    <div class="card"><h2>حساب ${monthName(ym)}</h2>
+      <div class="kv"><span>أيام الحضور</span><b>${c.s.p}${c.s.h?' + '+c.s.h+' نص':''}</b></div>
+      <div class="kv"><span>الأجر الأساسي</span><b>${fmt(c.base)} ${cur()}</b></div>
+      <div class="kv"><span>بدل الإضافي</span><b>${fmt(c.otPay)} ${cur()}</b></div>
+      <div class="kv"><span>خصم السلف</span><b style="color:var(--red)">- ${fmt(c.adv)} ${cur()}</b></div>
+      <div class="kv"><span><b>الصافي حتى اليوم</b></span><b style="color:var(--green)">${fmt(c.net)} ${cur()}</b></div>
+    </div>
+    <div class="card"><h2>العهدة القائمة</h2>
+      ${(cus||[]).length?(cus||[]).map(x=>`<div class="kv"><span>${esc(x.item)} × ${x.qty}</span>${x.sig?`<img class="sigImg" src="${x.sig}">`:`<b>${x.day}</b>`}</div>`).join(''):'<div class="empty">لا عهدة قائمة</div>'}
+    </div>
+    <div class="card"><h2>آخر السلف</h2>
+      ${(adv||[]).length?(adv||[]).map(a=>`<div class="kv"><span>${a.day}${a.note?' · '+esc(a.note):''}</span><b>${fmt(a.amount)} ${cur()} ${a.settled?'✓':''}</b></div>`).join(''):'<div class="empty">لا سلف</div>'}
+    </div>
+    ${ME.role==='admin'?`<div class="card"><h2>التوثيق</h2>
+      ${w.data_sig
+        ?`<div class="kv"><span>إقرار بصحة البيانات (${w.data_sig_date})</span><img class="sigImg" src="${w.data_sig}"></div>`
+        :`<button class="btn btn-line noPrint" style="width:100%" onclick="signData('${id}')">✍️ توقيع العامل بصحة بياناته</button>`}
+    </div>`:''}`;
+}
+function viewSettings(){
+  const s=SETTINGS;
+  return `
+  <div class="card"><h2>هوية الشركة</h2>
+    <div style="display:flex;gap:14px;align-items:center;margin-bottom:8px">
+      <span id="logoPrev">${s.logo?`<img class="logoPrev" src="${s.logo}">`:'<div class="hint">لا يوجد لوجو</div>'}</span>
+      <div>
+        <button class="btn btn-line btn-sm" onclick="document.getElementById('logoFile').click()">🖼️ رفع / تغيير اللوجو</button>
+        <input type="file" id="logoFile" accept="image/*" style="display:none" onchange="pickLogo(this)">
+        ${s.logo?`<div style="height:6px"></div><button class="btn btn-ghost btn-sm" onclick="removeLogo()">حذف اللوجو</button>`:''}
+      </div>
+    </div>
+    <input type="hidden" id="sLogo" value="${s.logo||''}">
+    <label>اسم الشركة</label><input id="sCompany" value="${esc(s.company||'')}">
+    <div class="hint">يظهران معاً في أعلى الصفحات وشاشة الدخول وقسائم الرواتب</div>
+  </div>
+  <div class="card"><h2>موقع المشروع والحضور</h2>
+    <div class="kv"><span>الموقع المحدد</span><b>${s.site_lat?('✓ محدد ('+(+s.site_lat).toFixed(5)+', '+(+s.site_lng).toFixed(5)+')'):'غير محدد بعد'}</b></div>
+    <button class="btn btn-line" style="width:100%;margin-top:8px" onclick="setSiteHere()">📍 تحديد موقع المشروع = مكاني الحالي</button>
+    <div class="hint">قف داخل المشروع واضغط الزر مرة واحدة</div>
+    <label>نطاق قبول الحضور (متر)</label><input id="sRadius" type="number" value="${s.radius||100}">
+  </div>
+  <div class="card"><h2>إعدادات الرواتب</h2>
+    <div class="row">
+      <div><label>العملة</label><input id="sCur" value="${esc(s.currency||'دينار')}"></div>
+      <div><label>أيام الشهر</label><input id="sMD" type="number" value="${s.month_days||26}"></div>
+      <div><label>ساعات اليوم</label><input id="sDH" type="number" value="${s.day_hours||8}"></div>
+    </div>
+  </div>
+  <button class="btn btn-primary" onclick="saveSettings()">حفظ جميع الإعدادات</button>`;
+}
+function pickLogo(inp){
+  const f=inp.files[0]; if(!f) return;
+  const r=new FileReader();
+  r.onload=e=>{ const img=new Image();
+    img.onload=()=>{ const c=document.createElement('canvas'); const s=Math.min(1,320/Math.max(img.width,img.height));
+      c.width=img.width*s; c.height=img.height*s;
+      c.getContext('2d').drawImage(img,0,0,c.width,c.height);
+      const data=c.toDataURL('image/png');
+      document.getElementById('sLogo').value=data;
+      document.getElementById('logoPrev').innerHTML=`<img class="logoPrev" src="${data}">`;
+    }; img.src=e.target.result; };
+  r.readAsDataURL(f);
+}
+function removeLogo(){ document.getElementById('sLogo').value=''; document.getElementById('logoPrev').innerHTML='<div class="hint">لا يوجد لوجو</div>'; }
+function setSiteHere(){
+  if(!navigator.geolocation){ toast('المتصفح لا يدعم تحديد الموقع'); return; }
+  toast('جاري تحديد موقعك…');
+  navigator.geolocation.getCurrentPosition(async pos=>{
+    const {error}=await SB.from('settings').update({site_lat:pos.coords.latitude,site_lng:pos.coords.longitude}).eq('id',1);
+    if(error){ err(error); return; }
+    SETTINGS.site_lat=pos.coords.latitude; SETTINGS.site_lng=pos.coords.longitude;
+    toast('✓ تم تثبيت موقع المشروع'); render();
+  }, ()=>toast('فعّل GPS واسمح بالوصول للموقع'), {enableHighAccuracy:true,timeout:15000});
+}
+async function saveSettings(){
+  const rec={
+    company:document.getElementById('sCompany').value.trim(),
+    logo:document.getElementById('sLogo').value,
+    currency:document.getElementById('sCur').value.trim()||'دينار',
+    month_days:parseInt(document.getElementById('sMD').value)||26,
+    day_hours:parseFloat(document.getElementById('sDH').value)||8,
+    radius:parseInt(document.getElementById('sRadius').value)||100
+  };
+  const {error}=await SB.from('settings').update(rec).eq('id',1);
+  if(error){ err(error); return; }
+  Object.assign(SETTINGS,rec); applyBrand(); toast('حُفظت الإعدادات'); render();
+}
+
+/* ============================================================
+   8) التوقيع الإلكتروني
+============================================================ */
+let sigCB=null;
+function openSignPad(title,cb){
+  sigCB=cb;
+  openModal(`
+    <div class="mHead"><h3>${title}</h3><button class="xBtn" onclick="closeModal()">×</button></div>
+    <div class="hint" style="margin-bottom:8px">وقّع بإصبعك داخل الإطار</div>
+    <canvas class="sigPad" id="sigCanvas"></canvas>
+    <div class="row" style="margin-top:12px">
+      <button class="btn btn-ghost" onclick="sigClear()">مسح</button>
+      <button class="btn btn-primary" style="flex:2" onclick="sigSave()">اعتماد التوقيع ✓</button>
+    </div>`);
+  const c=document.getElementById('sigCanvas');
+  c.width=c.offsetWidth*2; c.height=c.offsetHeight*2;
+  const x=c.getContext('2d');
+  x.scale(2,2); x.lineWidth=2.4; x.lineCap='round'; x.lineJoin='round'; x.strokeStyle='#1c2733';
+  let draw=false; c._dirty=false;
+  const pos=e=>{const r=c.getBoundingClientRect();return[e.clientX-r.left,e.clientY-r.top];};
+  c.addEventListener('pointerdown',e=>{draw=true;c._dirty=true;const[a,b]=pos(e);x.beginPath();x.moveTo(a,b);e.preventDefault();});
+  c.addEventListener('pointermove',e=>{if(!draw)return;const[a,b]=pos(e);x.lineTo(a,b);x.stroke();e.preventDefault();});
+  ['pointerup','pointerleave'].forEach(ev=>c.addEventListener(ev,()=>draw=false));
+}
+function sigClear(){ const c=document.getElementById('sigCanvas'); c.getContext('2d').clearRect(0,0,c.width,c.height); c._dirty=false; }
+function sigSave(){
+  const c=document.getElementById('sigCanvas');
+  if(!c._dirty){ toast('وقّع أولاً'); return; }
+  const data=c.toDataURL('image/png'); closeModal();
+  if(sigCB) sigCB(data);
+}
+function signCustody(id){
+  openSignPad('توقيع استلام العهدة', async sig=>{
+    const {error}=await SB.from('custody').update({sig,sig_date:today()}).eq('id',id);
+    if(error){ err(error); return; }
+    render(); toast('وُثّقت العهدة بالتوقيع');
+  });
+}
+function signPay(id){
+  const w=pById(id);
+  openSignPad('توقيع '+w.name+' باستلام راتب '+monthName(payMonth), async sig=>{
+    const {error}=await SB.from('pay_signs').insert({worker_id:id,month:payMonth,sig,day:today()});
+    if(error){ err(error); return; }
+    const D=await loadPayData(payMonth); window._payD=D;
+    toast('وُثّق استلام الراتب'); openSlip(id);
+  });
+}
+function signData(id){
+  const w=pById(id);
+  openSignPad('إقرار '+w.name+' بصحة بياناته', async sig=>{
+    const {error}=await SB.from('profiles').update({data_sig:sig,data_sig_date:today()}).eq('id',id);
+    if(error){ err(error); return; }
+    await reloadProfiles(); toast('وُثّق الإقرار'); openFile(id);
+  });
+}
+
+/* ============ Modal ============ */
+function openModal(html){ document.getElementById('modalBody').innerHTML=html; document.getElementById('modalBk').classList.add('open'); }
+function closeModal(){ document.getElementById('modalBk').classList.remove('open'); }
+
+boot();
+</script>
+</body>
+</html>
