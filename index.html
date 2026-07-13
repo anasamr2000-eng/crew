@@ -171,9 +171,50 @@ let PROFILES=[];             // كاش للعمال (مدير/مشرف)
 let TAB='workers';
 let attDate=today(), payMonth=thisMonth();
 let alertCount=0;
+let TEMPLATES=[], MYPERMS={};
+function computePerms(p){
+  const t=TEMPLATES.find(x=>x.key===(p.role_template||p.role))||{perms:{}};
+  return Object.assign({}, t.perms||{}, p.perms||{});
+}
+function can(k){
+  if(!ME) return false;
+  if(ME.role==='admin'||MYPERMS.all) return true;
+  return !!MYPERMS[k];
+}
+function tplName(key){ const t=TEMPLATES.find(x=>x.key===key); return t?t.name:(key==='supervisor'?'مشرف':key==='worker'?'عامل':key||'—'); }
+function isRealWorker(w){ return (w.role_template || w.role) === 'worker'; }
+const STATUS_META={
+  active:{l:'فعال',c:'b-green'}, leave:{l:'بإجازة',c:'b-amber'},
+  paused:{l:'موقوف',c:'b-gray'}, resigned:{l:'مستقيل',c:'b-gray'},
+  ended:{l:'منتهي',c:'b-red'}, archived:{l:'مؤرشف',c:'b-gray'}
+};
+function statusBadge(w){
+  let h='';
+  const st=STATUS_META[w.status||'active'];
+  if((w.status||'active')!=='active') h+=`<span class="badge ${st.c}">${st.l}</span> `;
+  if(w.contract_end && w.contract_end < today()) h+=`<span class="badge b-red">منتهي العقد</span>`;
+  return h;
+}
+function waNumber(phone){
+  let d=(phone||'').replace(/[^0-9]/g,'');
+  if(d.startsWith('00')) d=d.slice(2);
+  if(d.startsWith('0')) d='962'+d.slice(1);
+  return d;
+}
+function waValid(phone){
+  const d=waNumber(phone);
+  return d.length>=11 && d.length<=14;   // 962 + 9 أرقام = 12 نموذجياً
+}
+function waSend(w){
+  if(!w.phone){ toast('لا يوجد رقم هاتف لهذا الموظف'); return; }
+  if(!waValid(w.phone)){ toast('رقم الهاتف غير مكتمل — صححه من "تعديل" (مثال: 07XXXXXXXX)'); return; }
+  const msg='مرحباً '+w.name+' 👋\n\nهذا رابط تطبيق الدوام الخاص بالشركة:\n'+location.origin+location.pathname+
+    '\n\nاسم المستخدم: '+w.username+'\nكلمة المرور: أرسلها لك برسالة منفصلة.\n\nافتح الرابط ثم اختر "إضافة إلى الشاشة الرئيسية" ليصبح مثل تطبيق.';
+  window.open('https://api.whatsapp.com/send?phone='+waNumber(w.phone)+'&text='+encodeURIComponent(msg),'_blank');
+}
 
 function cfg(){ return {url:DEFAULT_SUPABASE_URL,key:DEFAULT_SUPABASE_KEY}; }
-function today(){ return new Date().toISOString().slice(0,10); }
+function today(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
 function thisMonth(){ return today().slice(0,7); }
 function fmt(n){ return (Math.round((+n||0)*100)/100).toLocaleString('en-US'); }
 function cur(){ return SETTINGS && SETTINGS.currency || 'دينار'; }
@@ -189,36 +230,28 @@ function monthName(ym){
   const [y,m]=ym.split('-'); return M[+m-1]+' '+y;
 }
 function err(e){ console.error(e); toast('خطأ: '+((e&&e.message)||e)); }
-function staff(){ return ME && (ME.role==='admin'||ME.role==='supervisor'); }
+function staff(){
+  return ME && (
+    ME.role==='admin' ||
+    can('workers.view') || can('attendance.view') ||
+    can('finance.view') || can('payroll.view') || can('custody.view') ||
+    can('perms.view') || can('perms.manage')
+  );
+}
 
 /* ============================================================
-   بوابة الدخول (إعداد الربط ← تسجيل الدخول)
+   بوابة الدخول
 ============================================================ */
 function gate(html){ document.getElementById('gateBox').innerHTML=html; }
-function showConfig(){
-  const c=cfg()||{};
-  gate(`
-    <div class="brandBar"></div>
-    <h1>ربط النظام (مرة واحدة)</h1>
-    <div class="sub">أدخل بيانات مشروع Supabase — من صفحة Settings → API</div>
-    <label>Project URL</label>
-    <input id="cfgUrl" dir="ltr" placeholder="https://xxxx.supabase.co" value="${esc(c.url||'')}">
-    <label>anon public key</label>
-    <input id="cfgKey" dir="ltr" placeholder="eyJhbGci..." value="${esc(c.key||'')}">
-    <div style="height:14px"></div>
-    <button class="btn btn-primary" onclick="saveConfig()">حفظ والمتابعة</button>
-  `);
-}
-function saveConfig(){
-  const url=document.getElementById('cfgUrl').value.trim();
-  const key=document.getElementById('cfgKey').value.trim();
-  if(!url.startsWith('https://')||key.length<20){ toast('تأكد من الرابط والمفتاح'); return; }
-  localStorage.setItem('crewCfg',JSON.stringify({url,key}));
-  boot();
-}
-function showLogin(msg){
+async function showLogin(msg){
   const logo = SETTINGS && SETTINGS.logo ? `<img class="gateLogo" src="${SETTINGS.logo}">` : '';
   const comp = SETTINGS && SETTINGS.company ? SETTINGS.company : 'إدارة عمالة الموقع';
+  let firstAdminBtn='';
+  try{
+    const {data:hasAdmin}=await SB.rpc('admin_exists');
+    if(hasAdmin===false) firstAdminBtn=`<div style="height:8px"></div>
+      <button class="btn btn-line" style="width:100%" onclick="showFirstAdmin()">إنشاء حساب المدير (أول مرة فقط)</button>`;
+  }catch(e){}
   gate(`
     ${logo}
     <div class="brandBar"></div>
@@ -230,8 +263,7 @@ function showLogin(msg){
     <input id="lp" type="password" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
     <div style="height:14px"></div>
     <button class="btn btn-primary" id="loginBtn" onclick="doLogin()">دخول</button>
-    <div style="height:8px"></div>
-    <button class="btn btn-line" style="width:100%" onclick="showFirstAdmin()">إنشاء حساب المدير (أول مرة فقط)</button>
+    ${firstAdminBtn}
   `);
 }
 function showFirstAdmin(){
@@ -248,6 +280,10 @@ function showFirstAdmin(){
   `);
 }
 async function createFirstAdmin(){
+  try{
+    const {data:hasAdmin}=await SB.rpc('admin_exists');
+    if(hasAdmin){ toast('يوجد مدير مسجل بالفعل — سجّل الدخول'); showLogin(); return; }
+  }catch(e){}
   const name=document.getElementById('fa_name').value.trim();
   const user=document.getElementById('fa_user').value.trim().toLowerCase();
   const pass=document.getElementById('fa_pass').value;
@@ -296,15 +332,23 @@ async function boot(){
   if(e1||!prof){ await SB.auth.signOut(); showLogin('لم يُعثر على ملفك — تواصل مع المدير'); return; }
   if(prof.active===false){ await SB.auth.signOut(); showLogin('حسابك موقوف — تواصل مع المدير'); return; }
   ME=prof; SETTINGS=st||{};
+  const {data:tpls}=await SB.from('role_templates').select('*').order('sort');
+  TEMPLATES=tpls||[];
+  MYPERMS=computePerms(ME);
   if(staff()){
-    const {data:ps}=await SB.from('profiles').select('*').neq('role','admin').order('name');
+    const {data:ps}=await SB.rpc('get_staff_profiles');
     PROFILES=(ps||[]);
   } else PROFILES=[ME];
   document.getElementById('gate').style.display='none';
   document.getElementById('app').style.display='block';
   applyBrand();
   buildNav();
-  TAB = ME.role==='worker' ? 'home' : 'workers';
+  TAB = (ME.role_template||ME.role)==='worker' ? 'home'
+      : can('workers.view') ? 'workers'
+      : can('attendance.view') ? 'attendance'
+      : (can('payroll.view')||can('finance.view')) ? 'payroll'
+      : can('custody.view') ? 'custody'
+      : 'home';
   if(ME.role==='admin') refreshAlertCount();
   render();
 }
@@ -321,13 +365,13 @@ function applyBrand(){
 ============================================================ */
 function buildNav(){
   let tabs=[];
-  if(ME.role==='admin') tabs=[
-    {k:'workers',l:'العمال',i:'👷'},{k:'attendance',l:'الحضور',i:'📅'},
-    {k:'payroll',l:'الرواتب',i:'💰'},{k:'custody',l:'العهدة',i:'🧰'},
-    {k:'alerts',l:'تنبيهات',i:'🔔'},{k:'settings',l:'إعدادات',i:'⚙️'}];
-  else if(ME.role==='supervisor') tabs=[
-    {k:'attendance',l:'الحضور',i:'📅'},{k:'workers',l:'العمال',i:'👷'},{k:'custody',l:'العهدة',i:'🧰'}];
-  else tabs=[{k:'home',l:'حضوري',i:'📍'},{k:'myfile',l:'ملفي',i:'👤'}];
+  const isWorkerSelf=(ME.role_template||ME.role)==='worker';
+  if(isWorkerSelf) tabs.push({k:'home',l:'حضوري',i:'📍'},{k:'myfile',l:'ملفي',i:'👤'});
+  if(can('workers.view')||can('perms.view')||can('perms.manage')) tabs.push({k:'workers',l:'العمال',i:'👷'});
+  if(can('attendance.view')) tabs.push({k:'attendance',l:'الحضور',i:'📅'});
+  if(can('payroll.view')||can('finance.view')) tabs.push({k:'payroll',l:'الرواتب',i:'💰'});
+  if(can('custody.view')) tabs.push({k:'custody',l:'العهدة',i:'🧰'});
+  if(ME.role==='admin') tabs.push({k:'alerts',l:'تنبيهات',i:'🔔'},{k:'settings',l:'إعدادات',i:'⚙️'});
   document.getElementById('navBar').innerHTML = tabs.map(t=>
     `<button data-k="${t.k}" onclick="go('${t.k}')"><span class="ico">${t.i}</span>${t.l}${t.k==='alerts'?'<span class="dot" id="alertDot" style="display:none"></span>':''}</button>`
   ).join('');
@@ -336,7 +380,21 @@ function buildNav(){
 function markNav(){ document.querySelectorAll('#navBar button').forEach(b=>b.classList.toggle('active',b.dataset.k===TAB)); }
 function go(t){ TAB=t; markNav(); render(); window.scrollTo(0,0); }
 function setMain(h){ document.getElementById('main').innerHTML=h; }
+function tabAllowed(t){
+  if(ME.role==='admin') return true;
+  if(t==='home') return (ME.role_template||ME.role)==='worker';
+  if(t==='myfile') return true;
+  if(t==='workers') return can('workers.view')||can('perms.view')||can('perms.manage');
+  if(t==='attendance') return can('attendance.view');
+  if(t==='payroll') return can('payroll.view')||can('finance.view');
+  if(t==='custody') return can('custody.view');
+  return false;
+}
 async function render(){
+  if(!tabAllowed(TAB)){
+    setMain('<div class="card"><div class="empty">🚫 ليست لديك صلاحية الوصول لهذه الشاشة</div></div>');
+    return;
+  }
   setMain('<div class="loading">جاري التحميل…</div>');
   try{
     if(TAB==='workers') setMain(await viewWorkers());
@@ -350,7 +408,8 @@ async function render(){
   }catch(e){ err(e); setMain('<div class="empty">تعذر التحميل — اسحب للتحديث أو اضغط ↻</div>'); }
 }
 async function reloadProfiles(){
-  const {data}=await SB.from('profiles').select('*').neq('role','admin').order('name');
+  const {data,error}=await SB.rpc('get_staff_profiles');
+  if(error){ PROFILES=[]; return; }
   PROFILES=data||[];
 }
 
@@ -362,11 +421,11 @@ async function viewWorkers(){
   const list=PROFILES.filter(w=>w.active!==false);
   const old=PROFILES.filter(w=>w.active===false);
   let h='';
-  if(ME.role==='admin'){
-    h+=`<button class="btn btn-primary noPrint" style="margin-bottom:14px" onclick="openWorkerForm()">＋ إضافة عامل / مشرف</button>
+  if(ME.role==='admin'||can('workers.add')){
+    h+=`<button class="btn btn-primary noPrint" style="margin-bottom:14px" onclick="openWorkerForm()">＋ إضافة موظف</button>
     <div class="row" style="margin-bottom:14px">
-      <div class="stat"><div class="n">${list.filter(w=>w.role==='worker').length}</div><div class="l">عامل فعّال</div></div>
-      <div class="stat"><div class="n">${list.filter(w=>w.role==='supervisor').length}</div><div class="l">مشرف</div></div>
+      <div class="stat"><div class="n">${list.filter(w=>isRealWorker(w)).length}</div><div class="l">عامل فعّال</div></div>
+      <div class="stat"><div class="n">${list.filter(w=>!isRealWorker(w)).length}</div><div class="l">إداري / مشرف</div></div>
     </div>`;
   }
   if(!list.length) h+=`<div class="card"><div class="empty">لا يوجد عمال بعد</div></div>`;
@@ -377,21 +436,29 @@ async function viewWorkers(){
   return h;
 }
 function workerCard(w,inactive){
-  const wage=w.role==='worker' ? (w.wage_type==='daily'?`${fmt(w.wage)} ${cur()}/يوم`:`${fmt(w.wage)} ${cur()}/شهر`) : '';
-  const badge=w.role==='supervisor'?`<span class="badge b-copper">مشرف</span>`:(w.wage_type==='daily'?`<span class="badge b-gray">يومي</span>`:`<span class="badge b-gray">شهري</span>`);
+  const wageOk = ME.role==='admin' || can('finance.view') || can('payroll.view');
+  const wage=(isRealWorker(w)&&wageOk) ? (w.wage_type==='daily'?`${fmt(w.wage)} ${cur()}/يوم`:`${fmt(w.wage)} ${cur()}/شهر`) : '';
+  const badge=`<span class="badge b-copper">${esc(tplName(w.role_template||w.role))}</span>`;
+  const canPerms = ME.role==='admin' || can('perms.manage') || can('perms.view');
   let acts='';
-  if(ME.role==='admin') acts=`<div class="wActs noPrint">
-    <button class="btn btn-line btn-sm" onclick="openFile('${w.id}')">الملف</button>
-    <button class="btn btn-ghost btn-sm" onclick="openWorkerForm('${w.id}')">تعديل</button></div>`;
+  if(ME.role==='admin' || can('workers.edit') || canPerms){
+    acts=`<div class="wActs noPrint">
+    ${ME.role==='admin'||can('workers.view')?`<button class="btn btn-line btn-sm" onclick="openFile('${w.id}')">الملف</button>`:''}
+    ${ME.role==='admin'||can('workers.edit')?`<button class="btn btn-ghost btn-sm" onclick="openWorkerForm('${w.id}')">تعديل</button>`:''}
+    ${canPerms?`<button class="btn btn-ghost btn-sm" onclick="openPermsEditor('${w.id}')">🎛️ صلاحيات</button>`:''}
+    ${(ME.role==='admin'&&w.phone)?`<button class="btn btn-green btn-sm" onclick="waSend(pById('${w.id}'))">📲 واتساب</button>`:''}
+    </div>`;
+  }
   return `<div class="wCard" style="${inactive?'opacity:.55':''}">
     ${avatarHTML(w)}
     <div class="wInfo">
-      <div class="nm">${esc(w.name)} ${badge} ${inactive?'<span class="badge b-red">موقوف</span>':''}</div>
-      <div class="jt">${esc(w.title||'—')}${wage?' · '+wage:''}</div>
+      <div class="nm">${esc(w.name)} ${badge} ${statusBadge(w)}</div>
+      <div class="jt">#${w.emp_no||'—'} · ${esc(w.title||'—')}${wage?' · '+wage:''}</div>
       <div class="jt" dir="ltr" style="text-align:right">${esc(w.username)}${w.phone?' · '+esc(w.phone):''}</div>
     </div>${acts}</div>`;
 }
 function openWorkerForm(id){
+  if(id ? !(ME.role==='admin'||can('workers.edit')) : !(ME.role==='admin'||can('workers.add'))){ toast('ليست لديك صلاحية'); return; }
   const w=id?pById(id):{role:'worker',wage_type:'daily',active:true};
   const isNew=!id;
   openModal(`
@@ -402,18 +469,44 @@ function openWorkerForm(id){
       <input type="file" id="fPhoto" accept="image/*" style="display:none" onchange="pickPhoto(this,'fPhotoData','fPhotoPrev')"></div>
     </div>
     <input type="hidden" id="fPhotoData" value="${w.photo||''}">
-    <label>الدور</label>
-    <select id="fRole" onchange="document.getElementById('wageRow').style.display=this.value==='worker'?'flex':'none'">
-      <option value="worker" ${w.role==='worker'?'selected':''}>عامل</option>
-      <option value="supervisor" ${w.role==='supervisor'?'selected':''}>مشرف</option>
+    ${id&&w.emp_no?`<div class="kv" style="margin-bottom:4px"><span>الرقم الوظيفي (تلقائي — لا يعدل)</span><b>#${w.emp_no}</b></div>`:''}
+    ${ME.role==='admin'
+      ? `<label>قالب الصلاحيات *</label>
+    <select id="fTpl" onchange="document.getElementById('wageRow').style.display=this.value==='worker'?'flex':'none'">
+      ${TEMPLATES.filter(t=>t.key!=='admin').map(t=>`<option value="${t.key}" ${(w.role_template||w.role)===t.key?'selected':''}>${esc(t.name)}</option>`).join('')}
     </select>
+    <div class="hint">الصلاحيات التفصيلية من زر 🎛️ في بطاقة الموظف بعد الحفظ</div>`
+      : (id
+        ? `<div class="kv" style="margin-bottom:4px"><span>قالب الصلاحيات (المدير فقط يغيّره)</span><b>${esc(tplName(w.role_template||w.role))}</b></div>`
+        : `<div class="hint">سيُنشأ الحساب كعامل — القوالب الإدارية يمنحها المدير فقط</div>`)}
     <label>الاسم الكامل *</label><input id="fName" value="${esc(w.name||'')}">
-    <label>المسمى الوظيفي</label><input id="fTitle" value="${esc(w.title||'')}" placeholder="فني كهرباء، مساعد...">
+    <label>المسمى الوظيفي الظاهر</label><input id="fTitle" value="${esc(w.title||'')}" placeholder="فني كهرباء، مهندس سلامة عامة...">
+    <label>حالة الموظف</label><select id="fStatus">
+      <option value="active" ${(w.status||'active')==='active'?'selected':''}>فعال</option>
+      <option value="paused" ${w.status==='paused'?'selected':''}>موقوف</option>
+      <option value="leave" ${w.status==='leave'?'selected':''}>بإجازة</option>
+      <option value="resigned" ${w.status==='resigned'?'selected':''}>مستقيل</option>
+      <option value="ended" ${w.status==='ended'?'selected':''}>منتهي</option>
+      <option value="archived" ${w.status==='archived'?'selected':''}>مؤرشف</option>
+    </select>
     <div class="row">
       <div><label>الرقم الوطني / الإقامة</label><input id="fNat" value="${esc(w.nat_id||'')}"></div>
-      <div><label>الهاتف</label><input id="fPhone" value="${esc(w.phone||'')}" inputmode="tel"></div>
+      <div><label>الهاتف (بواتساب)</label><input id="fPhone" value="${esc(w.phone||'')}" inputmode="tel" placeholder="07XXXXXXXX"></div>
     </div>
-    <div class="row" id="wageRow" style="display:${w.role==='worker'?'flex':'none'}">
+    <div class="row">
+      <div><label>الجنسية</label><input id="fNation" value="${esc(w.nationality||'')}"></div>
+      <div><label>القسم</label><input id="fDept" value="${esc(w.department||'')}"></div>
+    </div>
+    <label>العنوان</label><input id="fAddr" value="${esc(w.address||'')}">
+    <div class="row">
+      <div><label>اسم جهة الطوارئ</label><input id="fEmgN" value="${esc(w.emergency_name||'')}"></div>
+      <div><label>هاتف الطوارئ</label><input id="fEmgP" value="${esc(w.emergency_phone||'')}" inputmode="tel"></div>
+    </div>
+    <div class="row">
+      <div><label>نوع العقد</label><input id="fCtype" value="${esc(w.contract_type||'')}" placeholder="مياومة، سنوي..."></div>
+      <div><label>انتهاء العقد</label><input id="fCend" type="date" value="${w.contract_end||''}"></div>
+    </div>
+    <div class="row" id="wageRow" style="display:${(w.role_template||w.role)==='worker'?'flex':'none'}">
       <div><label>نوع الأجر</label><select id="fWageType">
         <option value="daily" ${w.wage_type==='daily'?'selected':''}>يومي</option>
         <option value="monthly" ${w.wage_type==='monthly'?'selected':''}>شهري</option></select></div>
@@ -449,20 +542,46 @@ function pickPhoto(inp,hidId,prevId){
   r.readAsDataURL(f);
 }
 async function saveWorker(id){
-  const role=document.getElementById('fRole').value;
+  if(id ? !(ME.role==='admin'||can('workers.edit')) : !(ME.role==='admin'||can('workers.add'))){ toast('ليست لديك صلاحية'); return; }
+  const oldW = id ? pById(id) : null;
+  const tpl = ME.role==='admin'
+    ? document.getElementById('fTpl').value
+    : (id ? (oldW.role_template||oldW.role) : 'worker');
+  // الحماية: قالب المشرف فقط يأخذ الدور القديم supervisor؛ باقي القوالب تُحكم من صلاحيات قاعدة البيانات
+  const role = tpl==='supervisor' ? 'supervisor' : 'worker';
   const name=document.getElementById('fName').value.trim();
   if(!name){ toast('أدخل الاسم'); return; }
+  const status=document.getElementById('fStatus').value;
+  // ===== التحقق من الحقول =====
+  const title=document.getElementById('fTitle').value.trim();
+  const phone=document.getElementById('fPhone').value.trim();
+  const emgP=document.getElementById('fEmgP').value.trim();
+  const cend=document.getElementById('fCend').value;
+  if(!title){ toast('أدخل المسمى الوظيفي'); return; }
+  if(!phone){ toast('أدخل رقم الهاتف — مطلوب لإرسال الرابط واتساب'); return; }
+  if(!waValid(phone)){ toast('رقم الهاتف غير مكتمل (مثال: 07XXXXXXXX)'); return; }
+  if(emgP && emgP.replace(/[^0-9]/g,'').length<9){ toast('هاتف الطوارئ غير مكتمل'); return; }
+  if(cend && document.getElementById('fStart').value && cend < document.getElementById('fStart').value){ toast('تاريخ انتهاء العقد قبل تاريخ المباشرة!'); return; }
   const rec={
-    role, name,
-    title:document.getElementById('fTitle').value.trim(),
+    role, role_template:tpl, name, status,
+    active: !['paused','resigned','ended','archived'].includes(status),
+    title, phone,
     nat_id:document.getElementById('fNat').value.trim(),
-    phone:document.getElementById('fPhone').value.trim(),
+    nationality:document.getElementById('fNation').value.trim(),
+    department:document.getElementById('fDept').value.trim(),
+    address:document.getElementById('fAddr').value.trim(),
+    emergency_name:document.getElementById('fEmgN').value.trim(),
+    emergency_phone:document.getElementById('fEmgP').value.trim(),
+    contract_type:document.getElementById('fCtype').value.trim(),
+    contract_end:document.getElementById('fCend').value||null,
     wage_type:document.getElementById('fWageType')?document.getElementById('fWageType').value:'daily',
     wage:parseFloat(document.getElementById('fWage')&&document.getElementById('fWage').value)||0,
     start_date:document.getElementById('fStart').value,
     photo:document.getElementById('fPhotoData').value
   };
-  if(role==='worker' && !(rec.wage>0)){ toast('أدخل قيمة الأجر'); return; }
+  if(tpl==='worker' && !(rec.wage>0)){ toast('أدخل قيمة الأجر'); return; }
+  // غير المدير لا يرسل حقول الدور/القالب إطلاقاً — الحماية مطبقة أيضاً من قاعدة البيانات (Trigger)
+  if(ME.role!=='admin'){ delete rec.role; delete rec.role_template; }
   const btn=document.getElementById('wSaveBtn'); btn.disabled=true;
   try{
     if(id){
@@ -486,10 +605,16 @@ async function saveWorker(id){
   }catch(e){ err(e); btn.disabled=false; }
 }
 async function toggleWorker(id){
+  if(!(ME.role==='admin'||can('workers.edit'))){ toast('ليست لديك صلاحية'); return; }
   const w=pById(id);
-  const {error}=await SB.from('profiles').update({active:!(w.active!==false)?true:false}).eq('id',id);
+  const activate = w.active===false;
+  const {error}=await SB.from('profiles').update({
+    active:activate, status:activate?'active':'paused'
+  }).eq('id',id);
   if(error){ err(error); return; }
+  await reloadProfiles();
   closeModal(); render();
+  toast(activate?'تمت إعادة التفعيل':'تم إيقاف الموظف');
 }
 
 /* ============================================================
@@ -497,7 +622,7 @@ async function toggleWorker(id){
 ============================================================ */
 async function viewAttendance(){
   await reloadProfiles();
-  const list=PROFILES.filter(w=>w.active!==false && w.role==='worker');
+  const list=PROFILES.filter(w=>w.active!==false && isRealWorker(w));
   const ym=attDate.slice(0,7);
   const [{data:dayRecs},{data:monthRecs}]=await Promise.all([
     SB.from('attendance').select('*').eq('day',attDate),
@@ -506,24 +631,29 @@ async function viewAttendance(){
   const day={}; (dayRecs||[]).forEach(r=>day[r.worker_id]=r);
   window._monthRecs=monthRecs||[];
   const missing=list.filter(w=>!day[w.id]);
-  let h=`<div class="card"><h2>تسجيل الحضور</h2>
+  const canEdit = ME.role==='admin' || can('attendance.edit');
+  let h=`<div class="card"><h2>${canEdit?'تسجيل الحضور':'الحضور (عرض فقط)'}</h2>
     <div class="periodBar">
       <input type="date" value="${attDate}" onchange="attDate=this.value;render()">
-      <button class="btn btn-green btn-sm" onclick="allPresent()">✓ الكل حاضر</button>
+      ${canEdit?`<button class="btn btn-green btn-sm" onclick="allPresent()">✓ الكل حاضر</button>`:''}
     </div>`;
   if(!list.length) return h+`<div class="empty">لا يوجد عمال</div></div>`;
   if(attDate===today()&&missing.length) h+=`<div class="hint" style="margin-bottom:8px">⏳ لم يسجلوا بعد: ${missing.map(w=>esc(w.name)).join('، ')}</div>`;
+  const ST={p:'<span class="badge b-green">حاضر</span>',h:'<span class="badge b-amber">نص يوم</span>',a:'<span class="badge b-red">غائب</span>'};
   h+=list.map(w=>{
     const r=day[w.id]||{};
     const src=r.source==='self'?`<span class="srcTag">📍 ذاتي${r.distance!=null?' ('+Math.round(r.distance)+'م)':''}</span>`:(r.source?`<span class="srcTag">✎ ${r.source==='supervisor'?'مشرف':'مدير'}</span>`:'');
-    return `<div class="attRow">
-      <div class="attName">${avatarHTML(w)}<div>${esc(w.name)}<div class="jt" style="font-weight:400">${esc(w.title||'')} ${src}</div></div></div>
-      <input class="otIn" type="number" inputmode="decimal" placeholder="إضافي" value="${r.ot||''}" onchange="setOT('${w.id}',this.value)">
+    const ctrls = canEdit
+      ? `<input class="otIn" type="number" inputmode="decimal" placeholder="إضافي" value="${r.ot||''}" onchange="setOT('${w.id}',this.value)">
       <div class="seg">
         <button class="${r.status==='p'?'on-p':''}" onclick="setAtt('${w.id}','p')">حاضر</button>
         <button class="${r.status==='h'?'on-h':''}" onclick="setAtt('${w.id}','h')">نص</button>
         <button class="${r.status==='a'?'on-a':''}" onclick="setAtt('${w.id}','a')">غائب</button>
-      </div></div>`;
+      </div>`
+      : `<div>${ST[r.status]||'<span class="badge b-gray">—</span>'}${r.ot?' <span class="hint">إضافي: '+fmt(r.ot)+' س</span>':''}</div>`;
+    return `<div class="attRow">
+      <div class="attName">${avatarHTML(w)}<div>${esc(w.name)}<div class="jt" style="font-weight:400">${esc(w.title||'')} ${src}</div></div></div>
+      ${ctrls}</div>`;
   }).join('');
   h+=`</div><div class="card"><h2>ملخص ${monthName(ym)}</h2><div class="tblWrap"><table class="tbl">
     <tr><th>العامل</th><th>حضور</th><th>نص</th><th>غياب</th><th>إضافي</th></tr>`;
@@ -539,6 +669,7 @@ function sumMonth(id,recs){
   return {p,h,a,ot};
 }
 async function upsertAtt(worker_id, patch){
+  if(!(ME.role==='admin'||can('attendance.edit'))){ toast('ليست لديك صلاحية تعديل الحضور'); return; }
   const src=ME.role==='supervisor'?'supervisor':'admin';
   const {data:ex}=await SB.from('attendance').select('id,status,ot').eq('worker_id',worker_id).eq('day',attDate).maybeSingle();
   if(ex){
@@ -550,14 +681,17 @@ async function upsertAtt(worker_id, patch){
   }
 }
 async function setAtt(id,s){
+  if(!(ME.role==='admin'||can('attendance.edit'))){ toast('ليست لديك صلاحية تعديل الحضور'); return; }
   const {data:ex}=await SB.from('attendance').select('id,status').eq('worker_id',id).eq('day',attDate).maybeSingle();
   if(ex&&ex.status===s){ await SB.from('attendance').delete().eq('id',ex.id); }
   else await upsertAtt(id,{status:s});
   render();
 }
-async function setOT(id,v){ await upsertAtt(id,{ot:parseFloat(v)||0}); }
+async function setOT(id,v){
+  if(!(ME.role==='admin'||can('attendance.edit'))) return; await upsertAtt(id,{ot:parseFloat(v)||0}); }
 async function allPresent(){
-  const list=PROFILES.filter(w=>w.active!==false&&w.role==='worker');
+  if(!(ME.role==='admin'||can('attendance.edit'))){ toast('ليست لديك صلاحية تعديل الحضور'); return; }
+  const list=PROFILES.filter(w=>w.active!==false&&isRealWorker(w));
   for(const w of list) await upsertAtt(w.id,{status:'p'});
   toast('تم تسجيل الجميع حاضرين'); render();
 }
@@ -566,6 +700,13 @@ async function allPresent(){
    3) شاشة العامل — تسجيل الحضور الذاتي بالموقع
 ============================================================ */
 async function viewHome(){
+  if(ME.status==='leave'){
+    return `<div class="card" style="text-align:center">
+      <div style="font-size:44px">🏖️</div>
+      <div style="font-weight:800;font-size:17px;margin-top:6px">أنت بإجازة حالياً</div>
+      <div class="hint">تسجيل الحضور متوقف حتى انتهاء الإجازة — للاستفسار تواصل مع الإدارة</div>
+    </div>`;
+  }
   const {data:rec}=await SB.from('attendance').select('*').eq('worker_id',ME.id).eq('day',today()).maybeSingle();
   const s=SETTINGS;
   const noSite = !(s.site_lat&&s.site_lng);
@@ -648,13 +789,16 @@ function calcPay(w,D){
 }
 async function viewPayroll(){
   await reloadProfiles();
+  const canPrint = ME.role==='admin' || can('reports.print');
+  const canAdv   = ME.role==='admin' || can('finance.advances');
+  const canPay   = ME.role==='admin' || can('payroll.manage');
   const D=await loadPayData(payMonth);
   window._payD=D;
-  const list=PROFILES.filter(w=>w.active!==false&&w.role==='worker');
+  const list=PROFILES.filter(w=>w.active!==false&&isRealWorker(w));
   let h=`<div class="card noPrint"><h2>كشف الرواتب</h2>
     <div class="periodBar">
       <input type="month" value="${payMonth}" onchange="payMonth=this.value;render()">
-      <button class="btn btn-line btn-sm" onclick="window.print()">🖨️ طباعة</button>
+      ${canPrint?`<button class="btn btn-line btn-sm" onclick="window.print()">🖨️ طباعة</button>`:''}
     </div></div>`;
   if(!list.length) return h+`<div class="card"><div class="empty">لا يوجد عمال</div></div>`;
   let tot=0;
@@ -673,6 +817,8 @@ async function viewPayroll(){
 }
 function openSlip(id){
   const w=pById(id), D=window._payD, c=calcPay(w,D);
+  const canPrint = ME.role==='admin' || can('reports.print');
+  const canPay   = ME.role==='admin' || can('payroll.manage');
   const logo=SETTINGS.logo?`<img src="${SETTINGS.logo}" style="max-height:44px;max-width:130px;object-fit:contain">`:'';
   openModal(`
     <div class="mHead"><div style="display:flex;gap:10px;align-items:center">${logo}<h3>قسيمة راتب — ${monthName(payMonth)}</h3></div><button class="xBtn noPrint" onclick="closeModal()">×</button></div>
@@ -690,14 +836,15 @@ function openSlip(id){
     <div class="divider"></div>
     ${c.sign
       ?`<div class="kv"><span>توقيع العامل باستلام الراتب (${c.sign.day})</span><img class="sigImg" src="${c.sign.sig}"></div>`
-      :`<button class="btn btn-line noPrint" style="width:100%" onclick="signPay('${id}')">✍️ توقيع العامل باستلام الراتب</button>`}
+      :(canPay?`<button class="btn btn-line noPrint" style="width:100%" onclick="signPay('${id}')">✍️ توقيع العامل باستلام الراتب</button>`:'<div class="hint">لم يوقع بعد</div>')}
     <div style="height:8px"></div>
     <div class="row noPrint">
-      <button class="btn btn-line" onclick="window.print()">🖨️ طباعة</button>
-      <button class="btn btn-green" onclick="settleMonth('${id}')">تصفية سلف الشهر</button>
+      ${canPrint?`<button class="btn btn-line" onclick="window.print()">🖨️ طباعة</button>`:''}
+      ${canPay?`<button class="btn btn-green" onclick="settleMonth('${id}')">تصفية سلف الشهر</button>`:''}
     </div>`);
 }
 async function settleMonth(id){
+  if(!(ME.role==='admin'||can('payroll.manage'))){ toast('ليست لديك صلاحية إدارة الرواتب'); return; }
   const {error}=await SB.from('advances').update({settled:true}).eq('worker_id',id).gte('day',payMonth+'-01').lte('day',payMonth+'-31');
   if(error){ err(error); return; }
   closeModal(); render(); toast('تمت تصفية سلف الشهر');
@@ -705,20 +852,21 @@ async function settleMonth(id){
 function advancesCard(D){
   const list=D.adv.slice().sort((a,b)=>b.day.localeCompare(a.day));
   let h=`<div class="card"><h2>السلف — ${monthName(payMonth)}</h2>
-    <button class="btn btn-primary noPrint" style="margin-bottom:12px" onclick="openAdvForm()">＋ تسجيل سلفة</button>`;
+    ${(ME.role==='admin'||can('finance.advances'))?`<button class="btn btn-primary noPrint" style="margin-bottom:12px" onclick="openAdvForm()">＋ تسجيل سلفة</button>`:''}`;
   if(!list.length) h+=`<div class="empty">لا سلف هذا الشهر</div>`;
   else{
     h+=`<div class="tblWrap"><table class="tbl"><tr><th>التاريخ</th><th>العامل</th><th>المبلغ</th><th>ملاحظة</th><th>الحالة</th><th class="noPrint"></th></tr>`;
     list.forEach(a=>{ const w=pById(a.worker_id);
       h+=`<tr><td>${a.day.slice(5)}</td><td>${esc(w?w.name:'؟')}</td><td class="money">${fmt(a.amount)}</td><td>${esc(a.note||'')}</td>
       <td>${a.settled?'<span class="badge b-green">مخصومة</span>':'<span class="badge b-amber">قائمة</span>'}</td>
-      <td class="noPrint"><button class="btn btn-ghost btn-sm" onclick="delAdv(${a.id})">حذف</button></td></tr>`; });
+      <td class="noPrint">${(ME.role==='admin'||can('payroll.manage'))?`<button class="btn btn-ghost btn-sm" onclick="delAdv(${a.id})">حذف</button>`:''}</td></tr>`; });
     h+=`</table></div>`;
   }
   return h+`</div>`;
 }
 function openAdvForm(){
-  const opts=PROFILES.filter(w=>w.active!==false&&w.role==='worker').map(w=>`<option value="${w.id}">${esc(w.name)}</option>`).join('');
+  if(!(ME.role==='admin'||can('finance.advances'))){ toast('ليست لديك صلاحية تسجيل السلف'); return; }
+  const opts=PROFILES.filter(w=>w.active!==false&&isRealWorker(w)).map(w=>`<option value="${w.id}">${esc(w.name)}</option>`).join('');
   openModal(`
     <div class="mHead"><h3>تسجيل سلفة</h3><button class="xBtn" onclick="closeModal()">×</button></div>
     <label>العامل</label><select id="aW">${opts}</select>
@@ -731,6 +879,7 @@ function openAdvForm(){
     <button class="btn btn-primary" onclick="saveAdv()">حفظ</button>`);
 }
 async function saveAdv(){
+  if(!(ME.role==='admin'||can('finance.advances'))){ toast('ليست لديك صلاحية تسجيل السلف'); return; }
   const amount=parseFloat(document.getElementById('aAmt').value);
   if(!(amount>0)){ toast('أدخل المبلغ'); return; }
   const {error}=await SB.from('advances').insert({worker_id:document.getElementById('aW').value,amount,day:document.getElementById('aDay').value,note:document.getElementById('aNote').value.trim()});
@@ -738,6 +887,7 @@ async function saveAdv(){
   closeModal(); render(); toast('سُجلت السلفة — ستخصم من راتب الشهر');
 }
 async function delAdv(id){
+  if(!(ME.role==='admin'||can('payroll.manage'))){ toast('ليست لديك صلاحية حذف السلف'); return; }
   if(!confirm('حذف السلفة؟')) return;
   await SB.from('advances').delete().eq('id',id); render();
 }
@@ -747,17 +897,18 @@ async function delAdv(id){
 ============================================================ */
 async function viewCustody(){
   await reloadProfiles();
+  const canCus = ME.role==='admin' || can('custody.manage');
   const {data}=await SB.from('custody').select('*').order('id',{ascending:false});
   const all=data||[]; const open=all.filter(c=>!c.returned), done=all.filter(c=>c.returned);
   let h=`<div class="card"><h2>عهدة العمال</h2>
-    <button class="btn btn-primary noPrint" style="margin-bottom:12px" onclick="openCusForm()">＋ تسليم عهدة</button>`;
+    ${canCus?`<button class="btn btn-primary noPrint" style="margin-bottom:12px" onclick="openCusForm()">＋ تسليم عهدة</button>`:''}`;
   if(!open.length) h+=`<div class="empty">لا عهد قائمة</div>`;
   else{
     h+=`<div class="tblWrap"><table class="tbl"><tr><th>العامل</th><th>الصنف</th><th>عدد</th><th>التاريخ</th><th>التوقيع</th><th class="noPrint"></th></tr>`;
     open.forEach(c=>{ const w=pById(c.worker_id);
       h+=`<tr><td><b>${esc(w?w.name:'؟')}</b></td><td>${esc(c.item)}${c.note?`<div class="jt">${esc(c.note)}</div>`:''}</td><td>${c.qty}</td><td>${c.day}</td>
-      <td>${c.sig?`<img class="sigImg" src="${c.sig}">`:`<button class="btn btn-line btn-sm noPrint" onclick="signCustody(${c.id})">✍️ توقيع</button>`}</td>
-      <td class="noPrint"><button class="btn btn-green btn-sm" onclick="returnCus(${c.id})">إرجاع ✓</button></td></tr>`; });
+      <td>${c.sig?`<img class="sigImg" src="${c.sig}">`:(canCus?`<button class="btn btn-line btn-sm noPrint" onclick="signCustody(${c.id})">✍️ توقيع</button>`:'<span class="hint">—</span>')}</td>
+      <td class="noPrint">${canCus?`<button class="btn btn-green btn-sm" onclick="returnCus(${c.id})">إرجاع ✓</button>`:''}</td></tr>`; });
     h+=`</table></div>`;
   }
   h+=`</div>`;
@@ -770,7 +921,8 @@ async function viewCustody(){
   return h;
 }
 function openCusForm(){
-  const opts=PROFILES.filter(w=>w.active!==false&&w.role==='worker').map(w=>`<option value="${w.id}">${esc(w.name)}</option>`).join('');
+  if(!(ME.role==='admin'||can('custody.manage'))){ toast('ليست لديك صلاحية إدارة العهدة'); return; }
+  const opts=PROFILES.filter(w=>w.active!==false&&isRealWorker(w)).map(w=>`<option value="${w.id}">${esc(w.name)}</option>`).join('');
   openModal(`
     <div class="mHead"><h3>تسليم عهدة</h3><button class="xBtn" onclick="closeModal()">×</button></div>
     <label>العامل</label><select id="cW">${opts}</select>
@@ -785,6 +937,7 @@ function openCusForm(){
     <div class="hint" style="margin-top:8px">بعد الحفظ وقّع العامل من الجدول لتوثيق الاستلام</div>`);
 }
 async function saveCus(){
+  if(!(ME.role==='admin'||can('custody.manage'))){ toast('ليست لديك صلاحية إدارة العهدة'); return; }
   const item=document.getElementById('cItem').value.trim();
   if(!item){ toast('أدخل الصنف'); return; }
   const {error}=await SB.from('custody').insert({worker_id:document.getElementById('cW').value,item,
@@ -794,6 +947,7 @@ async function saveCus(){
   closeModal(); render(); toast('سُجلت العهدة');
 }
 async function returnCus(id){
+  if(!(ME.role==='admin'||can('custody.manage'))){ toast('ليست لديك صلاحية إدارة العهدة'); return; }
   await SB.from('custody').update({returned:true,return_date:today()}).eq('id',id);
   render(); toast('تم الإرجاع');
 }
@@ -820,6 +974,7 @@ async function viewAlerts(){
   return h+`</div>`;
 }
 async function markSeen(){
+  if(ME.role!=='admin'){ toast('التنبيهات للمدير فقط'); return; }
   await SB.from('alerts').update({seen:true}).eq('seen',false);
   refreshAlertCount(); render();
 }
@@ -827,39 +982,45 @@ async function markSeen(){
 /* ============================================================
    7) ملف العامل + الإعدادات
 ============================================================ */
-function openFile(id){ fileHTML(id,true).then(h=>openModal(h)); }
+function openFile(id){
+  if(id!==ME.id && !(ME.role==='admin'||can('workers.view'))){ toast('ليست لديك صلاحية عرض الملفات'); return; }
+  fileHTML(id,true).then(h=>openModal(h));
+}
 async function fileHTML(id,inModal){
   const w=pById(id) || ME;
+  const own = id===ME.id;
+  const finOk = own || ME.role==='admin' || can('finance.view') || can('payroll.view');
+  const cusOk = own || ME.role==='admin' || can('custody.view');
   const ym=thisMonth();
+  const none=Promise.resolve({data:null});
   const [{data:att},{data:adv},{data:cus},{data:ps}]=await Promise.all([
-    SB.from('attendance').select('worker_id,status,ot').eq('worker_id',id).gte('day',ym+'-01').lte('day',ym+'-31'),
-    SB.from('advances').select('*').eq('worker_id',id).order('id',{ascending:false}).limit(8),
-    SB.from('custody').select('*').eq('worker_id',id).eq('returned',false),
-    SB.from('pay_signs').select('*').eq('worker_id',id).eq('month',ym).maybeSingle()
+    finOk ? SB.from('attendance').select('worker_id,status,ot').eq('worker_id',id).gte('day',ym+'-01').lte('day',ym+'-31') : none,
+    finOk ? SB.from('advances').select('*').eq('worker_id',id).order('id',{ascending:false}).limit(8) : none,
+    cusOk ? SB.from('custody').select('*').eq('worker_id',id).eq('returned',false) : none,
+    finOk ? SB.from('pay_signs').select('*').eq('worker_id',id).eq('month',ym).maybeSingle() : none
   ]);
-  const D={att:att||[],adv:(adv||[]).filter(a=>a.day.startsWith(ym)),ps:ps?[ps]:[]};
-  const c=calcPay(w,{att:D.att,adv:D.adv,ps:D.ps});
+  const c = finOk ? calcPay(w,{att:att||[],adv:(adv||[]).filter(a=>a.day.startsWith(ym)),ps:ps?[ps]:[]}) : null;
   return `
     ${inModal?`<div class="mHead"><h3>ملف العامل</h3><button class="xBtn" onclick="closeModal()">×</button></div>`:''}
     <div class="card" style="display:flex;gap:14px;align-items:center">
       ${avatarHTML(w)}
-      <div><div style="font-weight:800;font-size:17px">${esc(w.name)}</div>
-      <div class="jt">${esc(w.title||'')} · ${w.wage_type==='daily'?fmt(w.wage)+' '+cur()+'/يوم':fmt(w.wage)+' '+cur()+'/شهر'}</div>
+      <div><div style="font-weight:800;font-size:17px">${esc(w.name)} <span class="badge b-copper">#${w.emp_no||'—'}</span> ${statusBadge(w)}</div>
+      <div class="jt">${esc(w.title||'')}${finOk?' · '+(w.wage_type==='daily'?fmt(w.wage)+' '+cur()+'/يوم':fmt(w.wage)+' '+cur()+'/شهر'):''}</div>
       <div class="jt">مباشرة: ${w.start_date||'—'}${w.phone?' · '+esc(w.phone):''}</div></div>
     </div>
-    <div class="card"><h2>حساب ${monthName(ym)}</h2>
+    ${finOk?`<div class="card"><h2>حساب ${monthName(ym)}</h2>
       <div class="kv"><span>أيام الحضور</span><b>${c.s.p}${c.s.h?' + '+c.s.h+' نص':''}</b></div>
       <div class="kv"><span>الأجر الأساسي</span><b>${fmt(c.base)} ${cur()}</b></div>
       <div class="kv"><span>بدل الإضافي</span><b>${fmt(c.otPay)} ${cur()}</b></div>
       <div class="kv"><span>خصم السلف</span><b style="color:var(--red)">- ${fmt(c.adv)} ${cur()}</b></div>
       <div class="kv"><span><b>الصافي حتى اليوم</b></span><b style="color:var(--green)">${fmt(c.net)} ${cur()}</b></div>
-    </div>
-    <div class="card"><h2>العهدة القائمة</h2>
+    </div>`:''}
+    ${cusOk?`<div class="card"><h2>العهدة القائمة</h2>
       ${(cus||[]).length?(cus||[]).map(x=>`<div class="kv"><span>${esc(x.item)} × ${x.qty}</span>${x.sig?`<img class="sigImg" src="${x.sig}">`:`<b>${x.day}</b>`}</div>`).join(''):'<div class="empty">لا عهدة قائمة</div>'}
-    </div>
-    <div class="card"><h2>آخر السلف</h2>
+    </div>`:''}
+    ${finOk?`<div class="card"><h2>آخر السلف</h2>
       ${(adv||[]).length?(adv||[]).map(a=>`<div class="kv"><span>${a.day}${a.note?' · '+esc(a.note):''}</span><b>${fmt(a.amount)} ${cur()} ${a.settled?'✓':''}</b></div>`).join(''):'<div class="empty">لا سلف</div>'}
-    </div>
+    </div>`:''}
     ${ME.role==='admin'?`<div class="card"><h2>التوثيق</h2>
       ${w.data_sig
         ?`<div class="kv"><span>إقرار بصحة البيانات (${w.data_sig_date})</span><img class="sigImg" src="${w.data_sig}"></div>`
@@ -912,6 +1073,7 @@ function pickLogo(inp){
 }
 function removeLogo(){ document.getElementById('sLogo').value=''; document.getElementById('logoPrev').innerHTML='<div class="hint">لا يوجد لوجو</div>'; }
 function setSiteHere(){
+  if(ME.role!=='admin'){ toast('الإعدادات للمدير فقط'); return; }
   if(!navigator.geolocation){ toast('المتصفح لا يدعم تحديد الموقع'); return; }
   toast('جاري تحديد موقعك…');
   navigator.geolocation.getCurrentPosition(async pos=>{
@@ -922,6 +1084,7 @@ function setSiteHere(){
   }, ()=>toast('فعّل GPS واسمح بالوصول للموقع'), {enableHighAccuracy:true,timeout:15000});
 }
 async function saveSettings(){
+  if(ME.role!=='admin'){ toast('الإعدادات للمدير فقط'); return; }
   const rec={
     company:document.getElementById('sCompany').value.trim(),
     logo:document.getElementById('sLogo').value,
@@ -967,6 +1130,7 @@ function sigSave(){
   if(sigCB) sigCB(data);
 }
 function signCustody(id){
+  if(!(ME.role==='admin'||can('custody.manage'))){ toast('ليست لديك صلاحية إدارة العهدة'); return; }
   openSignPad('توقيع استلام العهدة', async sig=>{
     const {error}=await SB.from('custody').update({sig,sig_date:today()}).eq('id',id);
     if(error){ err(error); return; }
@@ -974,6 +1138,7 @@ function signCustody(id){
   });
 }
 function signPay(id){
+  if(!(ME.role==='admin'||can('payroll.manage'))){ toast('ليست لديك صلاحية إدارة الرواتب'); return; }
   const w=pById(id);
   openSignPad('توقيع '+w.name+' باستلام راتب '+monthName(payMonth), async sig=>{
     const {error}=await SB.from('pay_signs').insert({worker_id:id,month:payMonth,sig,day:today()});
@@ -983,12 +1148,72 @@ function signPay(id){
   });
 }
 function signData(id){
+  if(ME.role!=='admin'){ toast('التوثيق للمدير فقط'); return; }
   const w=pById(id);
   openSignPad('إقرار '+w.name+' بصحة بياناته', async sig=>{
     const {error}=await SB.from('profiles').update({data_sig:sig,data_sig_date:today()}).eq('id',id);
     if(error){ err(error); return; }
     await reloadProfiles(); toast('وُثّق الإقرار'); openFile(id);
   });
+}
+
+/* ============================================================
+   محرر الصلاحيات (مدير) — المرحلة 1
+============================================================ */
+const PERM_GROUPS=[
+  {t:'العمال',keys:[['workers.view','مشاهدة العمال'],['workers.add','إضافة عامل'],['workers.edit','تعديل بيانات العمال']]},
+  {t:'الحضور',keys:[['attendance.view','مشاهدة الحضور'],['attendance.edit','تسجيل وتعديل الحضور']]},
+  {t:'المالية',keys:[['finance.view','مشاهدة الحسابات'],['finance.advances','إضافة سلف'],['payroll.view','مشاهدة الرواتب'],['payroll.manage','إدارة الرواتب']]},
+  {t:'العهدة',keys:[['custody.view','مشاهدة العهدة'],['custody.manage','تسليم واستلام العهدة']]},
+  {t:'السلامة والملاحظات (تُفعّل لاحقاً)',keys:[['notes.add','إضافة ملاحظة'],['notes.safety','تقارير سلامة'],['notes.view','مشاهدة الملاحظات'],['violations.create','إنشاء مخالفة'],['violations.view','مشاهدة المخالفات']]},
+  {t:'أخرى',keys:[['docs.manage','إدارة وثائق العمال'],['reports.print','طباعة التقارير'],['perms.manage','إدارة صلاحيات المستخدمين'],['perms.view','مشاهدة الصلاحيات فقط']]}
+];
+function openPermsEditor(id){
+  const canManage = ME.role==='admin' || can('perms.manage');
+  const canView = canManage || can('perms.view');
+  if(!canView){ toast('ليست لديك صلاحية عرض الصلاحيات'); return; }
+  const w=pById(id);
+  const eff=computePerms(w);
+  const tpl=TEMPLATES.find(t=>t.key===(w.role_template||w.role))||{perms:{}};
+  const others=PROFILES.filter(x=>x.id!==id&&x.role!=='admin');
+  const dis=canManage?'':'disabled';
+  const boxes=PERM_GROUPS.map(g=>`
+    <div style="font-weight:800;font-size:13px;margin:12px 0 6px;color:var(--copper)">${g.t}</div>
+    ${g.keys.map(([k,l])=>`
+      <label style="display:flex;align-items:center;gap:8px;margin:6px 0;font-weight:600;font-size:14px;color:var(--ink)">
+        <input type="checkbox" class="permBox" data-k="${k}" ${eff[k]?'checked':''} ${dis} style="width:18px;height:18px;accent-color:var(--copper)">
+        ${l} ${tpl.perms&&tpl.perms[k]?'<span class="hint">(من القالب)</span>':''}
+      </label>`).join('')}`).join('');
+  openModal(`
+    <div class="mHead"><h3>صلاحيات: ${esc(w.name)} ${canManage?'':'<span class="badge b-gray">عرض فقط</span>'}</h3><button class="xBtn" onclick="closeModal()">×</button></div>
+    <div class="hint">القالب: <b>${esc(tplName(w.role_template||w.role))}</b>${canManage?' — أي تعديل هنا يُخصص لهذا الموظف فقط':''}</div>
+    ${canManage&&others.length?`<label>نسخ صلاحيات موظف آخر</label>
+    <select onchange="permCopyFrom(this.value)">
+      <option value="">— اختر للنسخ —</option>
+      ${others.map(o=>`<option value="${o.id}">${esc(o.name)} (${esc(tplName(o.role_template||o.role))})</option>`).join('')}
+    </select>`:''}
+    <div>${boxes}</div>
+    <div style="height:14px"></div>
+    ${canManage?`<button class="btn btn-primary" onclick="savePerms('${id}')">حفظ الصلاحيات</button>`:''}`);
+}
+function permCopyFrom(otherId){
+  if(!otherId) return;
+  const o=pById(otherId); const eff=computePerms(o);
+  document.querySelectorAll('.permBox').forEach(b=>{ b.checked=!!eff[b.dataset.k]; });
+  toast('نُسخت صلاحيات '+o.name+' — احفظ لتثبيتها');
+}
+async function savePerms(id){
+  if(!(ME.role==='admin'||can('perms.manage'))){ toast('ليست لديك صلاحية إدارة الصلاحيات'); return; }
+  const w=pById(id);
+  const tpl=TEMPLATES.find(t=>t.key===(w.role_template||w.role))||{perms:{}};
+  const overrides={};
+  document.querySelectorAll('.permBox').forEach(b=>{
+    const k=b.dataset.k, def=!!(tpl.perms&&tpl.perms[k]);
+    if(b.checked!==def) overrides[k]=b.checked;
+  });
+  const {error}=await SB.rpc('update_user_perms',{target_user:id,new_perms:overrides});
+  if(error){ err(error); return; }
+  await reloadProfiles(); closeModal(); toast('حُفظت الصلاحيات'); render();
 }
 
 /* ============ Modal ============ */
